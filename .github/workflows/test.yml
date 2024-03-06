@@ -40,10 +40,10 @@ jobs:
 
     strategy:
       matrix:
-        pgversion: [ v23.2 ]
+        crdbversion: [ v23.2 ]
 
     env:
-      CRDBVERSION: ${{ matrix.pgversion }}
+      CRDBVERSION: ${{ crdbversion.pgversion }}
 
     steps:
       - name: Checkout
