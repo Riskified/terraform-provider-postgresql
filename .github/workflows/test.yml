@@ -43,7 +43,7 @@ jobs:
         crdbversion: [ v23.2 ]
 
     env:
-      CRDBVERSION: ${{ crdbversion.pgversion }}
+      CRDBVERSION: ${{ matrix.crdbversion }}
 
     steps:
       - name: Checkout
