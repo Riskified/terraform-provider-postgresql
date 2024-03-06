@@ -1,0 +1,14 @@
+version: "3"
+
+services:
+    cockroachdb:
+          image: cockroachdb/cockroach:latest-${CRDBVERSION}
+          command:
+            - "start-single-node"
+            - "--accept-sql-without-tls"
+          ports:
+            - 26257:26257
+            - 8080:8080
+          environment:
+            - COCKROACH_USER=${PGUSER}
+            - COCKROACH_PASSWORD=${PGPASSWORD}

@@ -8,7 +8,7 @@ log() {
 }
 
 setup() {
-    "$(pwd)"/tests/testacc_setup.sh
+    "$(pwd)"/tests/testacc_setup.sh $1
 }
 
 run() {
@@ -19,16 +19,24 @@ run() {
 }
 
 cleanup() {
-    "$(pwd)"/tests/testacc_cleanup.sh
+    "$(pwd)"/tests/testacc_cleanup.sh $1
 }
 
 run_suite() {
     suite=${1?}
-    log "setup ($1)" && setup
+    tech=${2?}
+    log "setup ($1)" && setup "$tech"
     source "./tests/switch_$suite.sh"
-    log "run ($1)" && run || (log "cleanup" && cleanup && exit 1)
-    log "cleanup ($1)" && cleanup
+    log "run ($1)" && run || (log "cleanup" && cleanup $tech && exit 1)
+    log "cleanup ($1)" && cleanup $tech
 }
 
-run_suite "superuser"
-run_suite "rds"
+echo $1
+if [ "$1" == "pg" ]; then
+    run_suite "superuser" "pg"
+    run_suite "rds" "pg"
+else
+    run_suite "crdb" "crdb"
+fi
+
+
