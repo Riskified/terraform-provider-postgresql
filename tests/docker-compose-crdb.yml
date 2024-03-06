@@ -12,3 +12,9 @@ services:
           environment:
             - COCKROACH_USER=${PGUSER}
             - COCKROACH_PASSWORD=${PGPASSWORD}
+          healthcheck:
+            test: [ "CMD", "curl", "http://tests-cockroachdb-1:8080/health?ready=1" ]
+            interval: 2s
+            timeout: 1m
+            retries: 5
+

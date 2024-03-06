@@ -31,7 +31,7 @@ run_suite() {
     log "cleanup ($1)" && cleanup $tech
 }
 
-echo $1
+
 if [ "$1" == "pg" ]; then
     run_suite "superuser" "pg"
     run_suite "rds" "pg"
