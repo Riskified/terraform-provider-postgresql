@@ -165,14 +165,14 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	}
 
 	//cockroachdb support only encoding = 'UTF-8' (instead of UTF8), not supports DEFAULT
-	switch v, ok := d.GetOk(dbEncodingAttr); {
-	case ok && db.dbType == dbTypePostgresql:
-		fmt.Fprintf(b, " ENCODING = '%s' ", pqQuoteLiteral(v.(string)))
-	case ok && v.(string) != "UTF8" && v.(string) != "UNICODE" && db.dbType == dbTypeCockroachdb:
-		log.Printf("[ERROR] Cockroachdb does not support %s encoding", v.(string))
-	case v.(string) == "" && db.dbType == dbTypePostgresql:
-		fmt.Fprint(b, ` ENCODING = 'UTF8'`)
-	}
+	//switch v, ok := d.GetOk(dbEncodingAttr); {
+	//case ok && db.dbType == dbTypePostgresql:
+	//	fmt.Fprintf(b, " ENCODING = '%s' ", pqQuoteLiteral(v.(string)))
+	//case ok && v.(string) != "UTF8" && v.(string) != "UNICODE" && db.dbType == dbTypeCockroachdb:
+	//	log.Printf("[ERROR] Cockroachdb does not support %s encoding", v.(string))
+	//case v.(string) == "" && db.dbType == dbTypePostgresql:
+	//	fmt.Fprint(b, ` ENCODING = 'UTF8'`)
+	//}
 
 	switch v, ok := d.GetOk(dbEncodingAttr); {
 	case ok && strings.ToUpper(v.(string)) == "DEFAULT" && db.dbType == dbTypePostgresql:
