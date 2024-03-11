@@ -166,16 +166,28 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 
 	//cockroachdb support only encoding = 'UTF-8' (instead of UTF8), not supports DEFAULT
 	switch v, ok := d.GetOk(dbEncodingAttr); {
-	case ok && strings.ToUpper(v.(string)) == "DEFAULT" && db.dbType == dbTypePostgresql:
-		fmt.Fprintf(b, " ENCODING = DEFAULT")
-	case ok:
+	case ok && db.dbType == dbTypePostgresql:
 		fmt.Fprintf(b, " ENCODING = '%s' ", pqQuoteLiteral(v.(string)))
+	case ok && v.(string) != "UTF8" && v.(string) != "UNICODE" && db.dbType == dbTypeCockroachdb:
+		log.Printf("[ERROR] Cockroachdb does not support %s encoding", v.(string))
 	case v.(string) == "" && db.dbType == dbTypePostgresql:
 		fmt.Fprint(b, ` ENCODING = 'UTF8'`)
-	case v.(string) == "" && db.dbType == dbTypeCockroachdb:
-		fmt.Fprint(b, ` ENCODING = 'UTF-8'`)
 	}
 
+	switch v, ok := d.GetOk(dbEncodingAttr); {
+	case ok && strings.ToUpper(v.(string)) == "DEFAULT" && db.dbType == dbTypePostgresql:
+		fmt.Fprintf(b, " ENCODING DEFAULT")
+	case ok && db.dbType == dbTypePostgresql:
+		fmt.Fprintf(b, " ENCODING '%s' ", pqQuoteLiteral(v.(string)))
+	case ok && db.dbType == dbTypeCockroachdb && v.(string) != "UTF8" && v.(string) != "UTF-8" && v.(string) != "UNICODE":
+		log.Printf("[ERROR] Cockroachdb does not support %s encoding", v.(string))
+	case ok && db.dbType == dbTypeCockroachdb && (v.(string) == "UTF8" || v.(string) == "UTF-8" || v.(string) != "UNICODE"):
+		fmt.Fprintf(b, " ENCODING = '%s' ", pqQuoteLiteral(v.(string)))
+	case v.(string) == "" && db.dbType == dbTypePostgresql:
+		fmt.Fprint(b, ` ENCODING 'UTF8'`)
+	case v.(string) == "" && db.dbType == dbTypeCockroachdb:
+		fmt.Fprint(b, ` ENCODING = 'UTF8'`)
+	}
 	// Don't specify LC_COLLATE if user didn't specify it
 	// This will use the default one (usually the one defined in the template database)
 	switch v, ok := d.GetOk(dbCollationAttr); {
