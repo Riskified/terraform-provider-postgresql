@@ -532,7 +532,7 @@ func setDBConnLimit(db *DBConnection, d *schema.ResourceData) error {
 	}
 	sql := fmt.Sprintf("ALTER DATABASE %s CONNECTION LIMIT = %d", pq.QuoteIdentifier(dbName), connLimit)
 	if _, err := db.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating database CONNECTION LIMIT: %w %w", err, sql)
+		return fmt.Errorf("Error updating database CONNECTION LIMIT: %w %s", err, sql)
 	}
 
 	return nil
