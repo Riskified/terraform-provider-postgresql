@@ -525,7 +525,7 @@ func setDBConnLimit(db QueryAble, d *schema.ResourceData) error {
 
 	connLimit := d.Get(dbConnLimitAttr).(int)
 	dbName := d.Get(dbNameAttr).(string)
-	case db.dbTypeCockroachdb == dbTypeCockroachdb && connLimit == 0:
+	if db.dbTypeCockroachdb == dbTypeCockroachdb && connLimit == 0:
 	    return fmt.Errorf("Cockroachdb does not support setting CONNECTION LIMIT to 0")
 	sql := fmt.Sprintf("ALTER DATABASE %s CONNECTION LIMIT = %d", pq.QuoteIdentifier(dbName), connLimit)
 	if _, err := db.Exec(sql); err != nil {
