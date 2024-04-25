@@ -220,13 +220,11 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 		fmt.Fprint(b, " ALLOW_CONNECTIONS ", val)
 	}
 
-	{
-		val := d.Get(dbConnLimitAttr).(int)
-		if db.dbType == dbTypeCockroachdb && val == 0 {
-			log.Printf("[ERROR] Cockroachdb does not support setting CONNECTION LIMIT to 0")
-		} else {
-			fmt.Fprint(b, " CONNECTION LIMIT ", val)
-		}
+	val := d.Get(dbConnLimitAttr).(int)
+	if db.dbType == dbTypeCockroachdb && val == 0 {
+		log.Printf("[ERROR] Cockroachdb does not support setting CONNECTION LIMIT to 0")
+	} else {
+		fmt.Fprint(b, " CONNECTION LIMIT ", val)
 	}
 
 	if db.featureSupported(featureDBIsTemplate) {
