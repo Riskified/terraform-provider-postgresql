@@ -518,15 +518,15 @@ func setDBTablespace(db QueryAble, d *schema.ResourceData) error {
 	return nil
 }
 
-func setDBConnLimit(db QueryAble, d *schema.ResourceData) error {
+func setDBConnLimit(db *DBConnection, d *schema.ResourceData) error {
 	if !d.HasChange(dbConnLimitAttr) {
 		return nil
 	}
 
 	connLimit := d.Get(dbConnLimitAttr).(int)
 	dbName := d.Get(dbNameAttr).(string)
-	if db.dbTypeCockroachdb == dbTypeCockroachdb && connLimit == 0 {
-	    return fmt.Errorf("Cockroachdb does not support setting CONNECTION LIMIT to 0")
+	if db.dbType == dbTypeCockroachdb && connLimit == 0 {
+		return fmt.Errorf("Cockroachdb does not support setting CONNECTION LIMIT to 0")
 	}
 	sql := fmt.Sprintf("ALTER DATABASE %s CONNECTION LIMIT = %d", pq.QuoteIdentifier(dbName), connLimit)
 	if _, err := db.Exec(sql); err != nil {
