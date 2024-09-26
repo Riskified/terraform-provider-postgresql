@@ -165,17 +165,29 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	}
 
 	//cockroachdb support only encoding = 'UTF-8' (instead of UTF8), not supports DEFAULT
+	//switch v, ok := d.GetOk(dbEncodingAttr); {
+	//case ok && db.dbType == dbTypePostgresql:
+	//	fmt.Fprintf(b, " ENCODING = '%s' ", pqQuoteLiteral(v.(string)))
+	//case ok && v.(string) != "UTF8" && v.(string) != "UNICODE" && db.dbType == dbTypeCockroachdb:
+	//	log.Printf("[ERROR] Cockroachdb does not support %s encoding", v.(string))
+	//case v.(string) == "" && db.dbType == dbTypePostgresql:
+	//	fmt.Fprint(b, ` ENCODING = 'UTF8'`)
+	//}
+
 	switch v, ok := d.GetOk(dbEncodingAttr); {
 	case ok && strings.ToUpper(v.(string)) == "DEFAULT" && db.dbType == dbTypePostgresql:
-		fmt.Fprintf(b, " ENCODING = DEFAULT")
-	case ok:
+		fmt.Fprintf(b, " ENCODING DEFAULT")
+	case ok && db.dbType == dbTypePostgresql:
+		fmt.Fprintf(b, " ENCODING '%s' ", pqQuoteLiteral(v.(string)))
+	case ok && db.dbType == dbTypeCockroachdb && v.(string) != "UTF8" && v.(string) != "UTF-8" && v.(string) != "UNICODE":
+		log.Printf("[ERROR] Cockroachdb does not support %s encoding", v.(string))
+	case ok && db.dbType == dbTypeCockroachdb && (v.(string) == "UTF8" || v.(string) == "UTF-8" || v.(string) != "UNICODE"):
 		fmt.Fprintf(b, " ENCODING = '%s' ", pqQuoteLiteral(v.(string)))
 	case v.(string) == "" && db.dbType == dbTypePostgresql:
-		fmt.Fprint(b, ` ENCODING = 'UTF8'`)
+		fmt.Fprint(b, ` ENCODING 'UTF8'`)
 	case v.(string) == "" && db.dbType == dbTypeCockroachdb:
-		fmt.Fprint(b, ` ENCODING = 'UTF-8'`)
+		fmt.Fprint(b, ` ENCODING = 'UTF8'`)
 	}
-
 	// Don't specify LC_COLLATE if user didn't specify it
 	// This will use the default one (usually the one defined in the template database)
 	switch v, ok := d.GetOk(dbCollationAttr); {
@@ -208,8 +220,10 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 		fmt.Fprint(b, " ALLOW_CONNECTIONS ", val)
 	}
 
-	{
-		val := d.Get(dbConnLimitAttr).(int)
+	val := d.Get(dbConnLimitAttr).(int)
+	if db.dbType == dbTypeCockroachdb && val == 0 {
+		log.Printf("[ERROR] Cockroachdb does not support setting CONNECTION LIMIT to 0")
+	} else {
 		fmt.Fprint(b, " CONNECTION LIMIT ", val)
 	}
 
@@ -506,16 +520,19 @@ func setDBTablespace(db QueryAble, d *schema.ResourceData) error {
 	return nil
 }
 
-func setDBConnLimit(db QueryAble, d *schema.ResourceData) error {
+func setDBConnLimit(db *DBConnection, d *schema.ResourceData) error {
 	if !d.HasChange(dbConnLimitAttr) {
 		return nil
 	}
 
 	connLimit := d.Get(dbConnLimitAttr).(int)
 	dbName := d.Get(dbNameAttr).(string)
+	if db.dbType == dbTypeCockroachdb && connLimit == 0 {
+		return fmt.Errorf("Cockroachdb does not support setting CONNECTION LIMIT to 0")
+	}
 	sql := fmt.Sprintf("ALTER DATABASE %s CONNECTION LIMIT = %d", pq.QuoteIdentifier(dbName), connLimit)
 	if _, err := db.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating database CONNECTION LIMIT: %w", err)
+		return fmt.Errorf("Error updating database CONNECTION LIMIT: %w %s", err, sql)
 	}
 
 	return nil
