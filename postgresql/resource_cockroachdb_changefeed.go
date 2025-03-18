@@ -93,7 +93,8 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 		tableListStr, kafkaConnectionName, cursorClause, avroSchemaPrefix, registryConnectionName,
 	)
 	txn, err = startTransaction(db.client, database)
-	result, err := txn.Exec(sqlChangefeed)
+	var jobID string
+	err = txn.QueryRow(sqlChangefeed).Scan(&jobID)
 	if err != nil {
 		return fmt.Errorf("Error creating changefeed: %w", err)
 	}
@@ -101,20 +102,16 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
-	// Process the result to return a different value
-	rowsAffected, err := result.RowsAffected()
-	return fmt.Errorf("rows affected %w", rowsAffected)
-
-	d.SetId("1")
+	d.SetId(jobID)
 	d.Set(CDCAvroSchemaPrefix, fmt.Sprintf("%s_", avroSchemaPrefix))
 	d.Set(CDCRegistryConnectionName, registryConnectionName)
 	d.Set(CDCKafkaConnectionName, kafkaConnectionName)
 
-	//// Return the number of rows affected as a string
 	return nil
 }
 
 func resourceCockroachDBChangefeedRead(db *DBConnection, d *schema.ResourceData) error {
+
 	return nil
 }
 
