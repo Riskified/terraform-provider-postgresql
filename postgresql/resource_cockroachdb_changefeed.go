@@ -103,7 +103,7 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 	}
 
 	d.SetId(jobID)
-	d.Set(CDCAvroSchemaPrefix, fmt.Sprintf("%s_", avroSchemaPrefix))
+	d.Set(CDCAvroSchemaPrefix, fmt.Sprintf("%s", avroSchemaPrefix))
 	d.Set(CDCRegistryConnectionName, registryConnectionName)
 	d.Set(CDCKafkaConnectionName, kafkaConnectionName)
 
@@ -116,9 +116,34 @@ func resourceCockroachDBChangefeedRead(db *DBConnection, d *schema.ResourceData)
 }
 
 func resourceCockroachDBChangefeedDelete(db *DBConnection, d *schema.ResourceData) error {
+	txn, err := startTransaction(db.client, "")
+	if err != nil {
+		return err
+	}
+	defer deferredRollback(txn)
+	txn.Exec(fmt.Sprintf("CANCEL JOB %s", d.Id()))
+	if err = txn.Commit(); err != nil {
+		return fmt.Errorf("could not commit transaction: %w", err)
+	}
+	d.SetId("")
 	return nil
+
 }
 
 func resourceCockroachDBChangefeedExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	return false, nil
+	txn, err := startTransaction(db.client, "")
+	if err != nil {
+		return false, err
+	}
+	defer deferredRollback(txn)
+	return jobExists(txn, d.Id())
+}
+
+func jobExists(db QueryAble, jobID string) (bool, error) {
+	var jobIDExists string
+	err := db.QueryRow("SELECT job_id FROM [SHOW JOBS] WHERE job_id = $1", jobID).Scan(&jobIDExists)
+	if err != nil {
+		return false, err
+	}
+	return jobIDExists == jobID, nil
 }
