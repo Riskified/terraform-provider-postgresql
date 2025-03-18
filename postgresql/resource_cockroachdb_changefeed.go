@@ -5,6 +5,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"strings"
+	"time"
 )
 
 const (
@@ -20,7 +21,7 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 		Create: PGResourceFunc(resourceCockroachDBChangefeedCreate),
 		Read:   PGResourceFunc(resourceCockroachDBChangefeedRead),
 		Delete: PGResourceFunc(resourceCockroachDBChangefeedDelete),
-		//Update: PGResourceFunc(resourceCockroachDBChangefeedUpdate),
+		Update: PGResourceFunc(resourceCockroachDBChangefeedUpdate),
 		Exists: PGResourceExistsFunc(resourceCockroachDBChangefeedExists),
 		//Importer: &schema.ResourceImporter{
 		//	StateContext: schema.ImportStatePassthroughContext,
@@ -29,7 +30,6 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 			CDCtableList: {
 				Type:        schema.TypeList,
 				Required:    true,
-				ForceNew:    true,
 				MinItems:    1,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "Sets the tables list to create the changefeed for",
@@ -37,27 +37,23 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 			CDCKafkaConnectionName: {
 				Type:        schema.TypeString,
 				Required:    true,
-				ForceNew:    true,
 				Description: "kafka user name",
 			},
 			CDCAvroSchemaPrefix: {
 				Type:         schema.TypeString,
 				Required:     true,
-				ForceNew:     true,
 				ValidateFunc: validation.StringIsNotEmpty,
 				Description:  "avro schema prefix",
 			},
 			CDCRegistryConnectionName: {
 				Type:         schema.TypeString,
 				Required:     true,
-				ForceNew:     true,
 				ValidateFunc: validation.StringIsNotEmpty,
 				Description:  "schema registry url",
 			},
 			CDCStartFrom: {
 				Type:        schema.TypeString,
 				Optional:    true,
-				ForceNew:    true,
 				Description: "cdc start from cursor",
 			},
 		},
@@ -106,6 +102,7 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 	d.Set(CDCAvroSchemaPrefix, fmt.Sprintf("%s", avroSchemaPrefix))
 	d.Set(CDCRegistryConnectionName, registryConnectionName)
 	d.Set(CDCKafkaConnectionName, kafkaConnectionName)
+	d.Set(CDCtableList, tableList)
 
 	return nil
 }
@@ -146,4 +143,116 @@ func jobExists(db QueryAble, jobID string) (bool, error) {
 		return false, err
 	}
 	return jobIDExists == jobID, nil
+}
+
+func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceData) error {
+	if !d.HasChange(CDCtableList) {
+		return nil
+	}
+
+	currentTableListInterface, newTableListInterface := d.GetChange(CDCtableList)
+
+	currentTableList := strings.Split(currentTableListInterface.([]interface{})[0].(string), ",")
+	newTableList := strings.Split(newTableListInterface.([]interface{})[0].(string), ",")
+
+	tablesToAdd, tablesToRemove := findTableChanges(currentTableList, newTableList)
+
+	jobID := d.Id()
+	txn, err := startTransaction(db.client, "")
+	if err != nil {
+		return fmt.Errorf("Error starting transaction: %w", err)
+	}
+	defer deferredRollback(txn)
+
+	if len(tablesToAdd) > 0 || len(tablesToRemove) > 0 {
+		// Pause the job
+		_, err = txn.Exec(fmt.Sprintf("PAUSE JOB %s", jobID))
+		if err != nil {
+			return fmt.Errorf("Error pausing changefeed job: %w", err)
+		}
+		if err = txn.Commit(); err != nil {
+			return fmt.Errorf("could not commit transaction: %w", err)
+		}
+		waitForJobStatus(db, jobID, "PAUSED")
+
+		// Alter the changefeed to add new tables
+		txn, err = startTransaction(db.client, "")
+		for _, table := range tablesToAdd {
+			_, err = txn.Exec(fmt.Sprintf("ALTER CHANGEFEED %s ADD %s", jobID, table))
+			if err != nil {
+				return fmt.Errorf("Error altering changefeed to add table %s: %w", table, err)
+			}
+		}
+
+		// Alter the changefeed to drop removed tables
+		for _, table := range tablesToRemove {
+			_, err = txn.Exec(fmt.Sprintf("ALTER CHANGEFEED %s DROP %s", jobID, table))
+			if err != nil {
+				return fmt.Errorf("Error altering changefeed to drop table %s: %w", table, err)
+			}
+		}
+
+		// Resume the job
+		_, err = txn.Exec(fmt.Sprintf("RESUME JOB %s", jobID))
+		if err != nil {
+			return fmt.Errorf("Error resuming changefeed job: %w", err)
+		}
+	}
+
+	if err = txn.Commit(); err != nil {
+		return fmt.Errorf("could not commit transaction: %w", err)
+	}
+
+	return resourceCockroachDBChangefeedRead(db, d)
+}
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+func findTableChanges(currentTableList []string, newTableList []string) ([]string, []string) {
+	var tablesToAdd []string
+	for _, newTable := range newTableList {
+		if !contains(currentTableList, newTable) {
+			tablesToAdd = append(tablesToAdd, newTable)
+		}
+	}
+
+	var tablesToRemove []string
+	for _, currentTable := range currentTableList {
+		if !contains(newTableList, currentTable) {
+			tablesToRemove = append(tablesToRemove, currentTable)
+		}
+	}
+
+	return tablesToAdd, tablesToRemove
+}
+
+func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string) error {
+	for {
+		txn, err := startTransaction(db.client, "")
+		if err != nil {
+			return fmt.Errorf("Error starting transaction: %w", err)
+		}
+
+		var status string
+		query := fmt.Sprintf("SELECT status FROM [SHOW JOB %s]", jobID)
+		err = txn.QueryRow(query).Scan(&status)
+		if err != nil {
+			txn.Rollback()
+			return fmt.Errorf("Error querying job status: %w", err)
+		}
+
+		if strings.ToUpper(status) == strings.ToUpper(requestedStatus) {
+			txn.Commit()
+			return nil
+		}
+
+		txn.Commit()
+		time.Sleep(1 * time.Second)
+	}
 }
