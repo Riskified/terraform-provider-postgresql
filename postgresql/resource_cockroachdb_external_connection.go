@@ -3,6 +3,7 @@ package postgresql
 import (
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"strings"
 )
 
 const (
@@ -40,14 +41,14 @@ func resourceCockroachDBExternalConnectionCreate(db *DBConnection, d *schema.Res
 	if err != nil {
 		return fmt.Errorf("Error starting transaction: %w", err)
 	}
-	if _, err = txn.Exec("CREATE EXTERNAL CONNECTION " + connName + " AS '" + connUrl + "'"); err != nil {
+	if _, err = txn.Exec(fmt.Sprintf("CREATE EXTERNAL CONNECTION %s AS '%s'", connName, connUrl)); err != nil {
 		return fmt.Errorf("Error creating EXTERNAL CONNECTION confluent_registry: %w", err)
 	}
 	if err = txn.Commit(); err != nil {
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 	d.SetId(connName)
-	d.Set(ConnUrl, connUrl)
+	d.Set(ConnUrl, strings.TrimSpace(connUrl))
 	return nil
 }
 
@@ -63,15 +64,28 @@ func resourceCockroachDBExternalConnectionReadImpl(db *DBConnection, d *schema.R
 		return fmt.Errorf("Error starting transaction: %w", err)
 	}
 	var connUrl string
-	if err := txn.QueryRow("select connection_details from system.external_connections where connection_name = $1", connName).Scan(&connUrl); err != nil {
+	if err := txn.QueryRow("select connection_uri from [show external connections] where connection_name= $1", connName).Scan(&connUrl); err != nil {
 		return fmt.Errorf("Error reading EXTERNAL CONNECTION: %w", err)
 	}
-	d.Set(ConnUrl, connUrl)
-	d.Set(ConnName, connName)
+	//	d.Set(ConnUrl, strings.TrimSpace(connUrl))
+	d.Set(ConnName, strings.TrimSpace(connName))
 	return nil
 }
 
 func resourceCockroachDBExternalConnectionDelete(db *DBConnection, d *schema.ResourceData) error {
+	connName := d.Get(ConnName).(string)
+	database := db.client.databaseName
+	txn, err := startTransaction(db.client, database)
+	if err != nil {
+		return fmt.Errorf("Error starting transaction: %w", err)
+	}
+	if _, err = txn.Exec(fmt.Sprintf("DROP EXTERNAL CONNECTION %s", connName)); err != nil {
+		return fmt.Errorf("Error deleting EXTERNAL CONNECTION: %w", err)
+	}
+	if err = txn.Commit(); err != nil {
+		return fmt.Errorf("could not commit transaction: %w", err)
+	}
+	d.SetId("")
 	return nil
 }
 
