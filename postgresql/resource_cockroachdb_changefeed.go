@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -23,9 +24,9 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 		Delete: PGResourceFunc(resourceCockroachDBChangefeedDelete),
 		Update: PGResourceFunc(resourceCockroachDBChangefeedUpdate),
 		Exists: PGResourceExistsFunc(resourceCockroachDBChangefeedExists),
-		//Importer: &schema.ResourceImporter{
-		//	StateContext: schema.ImportStatePassthroughContext,
-		//},
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
 		Schema: map[string]*schema.Schema{
 			CDCtableList: {
 				Type:        schema.TypeList,
@@ -108,6 +109,37 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 }
 
 func resourceCockroachDBChangefeedRead(db *DBConnection, d *schema.ResourceData) error {
+	return resourceCockroachDBChangefeedReadImpl(db, d)
+	//return nil
+}
+
+func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceData) error {
+	jobID := d.Id()
+	var sinkUri, jobTableString, description string
+	err := db.QueryRow(fmt.Sprintf("select sink_uri,topics,description from [show changefeed job %s];", jobID)).Scan(&sinkUri, &jobTableString, &description)
+	if err != nil {
+		return fmt.Errorf("Can't retrieve job details: %w", err)
+	}
+
+	// Setting the table list
+	currentTableListInterface := d.Get(CDCtableList)
+	if len(currentTableListInterface.([]interface{})) == 0 {
+		d.Set(CDCtableList, strings.Split(jobTableString, ","))
+	} else {
+		currentTableList := strings.Split(currentTableListInterface.([]interface{})[0].(string), ",")
+		tablesToAdd, tablesToRemove := findTableChanges(currentTableList, strings.Split(jobTableString, ","))
+		if len(tablesToAdd) == 0 && len(tablesToRemove) == 0 {
+			tableList := Interface2StringList(currentTableListInterface)
+			d.Set(CDCtableList, tableList)
+		}
+	}
+	// setting the sink uri
+	d.Set(CDCKafkaConnectionName, strings.TrimPrefix(sinkUri, "external://"))
+
+	// setting the avro schema prefix and confluent schema registry
+	avroSchemaPrefix, confluentSchemaRegistry := extractAvroDetails(description)
+	d.Set(CDCAvroSchemaPrefix, fmt.Sprintf("%s", strings.TrimSuffix(avroSchemaPrefix, "_")))
+	d.Set(CDCRegistryConnectionName, confluentSchemaRegistry)
 
 	return nil
 }
@@ -203,7 +235,7 @@ func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceDat
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
-	return resourceCockroachDBChangefeedRead(db, d)
+	return resourceCockroachDBChangefeedReadImpl(db, d)
 }
 func contains(slice []string, item string) bool {
 	for _, s := range slice {
@@ -255,4 +287,36 @@ func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string) er
 		txn.Commit()
 		time.Sleep(1 * time.Second)
 	}
+}
+
+func extractAvroDetails(sql string) (string, string) {
+	//sql := `CREATE CHANGEFEED FOR TABLE riskx.public.dd, TABLE riskx.public.bb, TABLE cc, TABLE riskx.public.yy INTO 'external://my_kafka_prefix' WITH OPTIONS (avro_schema_prefix = 'my_avro_prefix_', confluent_schema_registry = 'external://confluence_prefix', diff, format = 'avro', on_error = 'pause', updated)`
+
+	// Regular expression to extract the avro_schema_prefix
+	avroSchemaPrefixRegex := regexp.MustCompile(`avro_schema_prefix\s*=\s*'([^']*)'`)
+	avroSchemaPrefixMatch := avroSchemaPrefixRegex.FindStringSubmatch(sql)
+	avroSchemaPrefix := ""
+	if len(avroSchemaPrefixMatch) > 1 {
+		avroSchemaPrefix = avroSchemaPrefixMatch[1]
+	}
+
+	// Regular expression to extract the confluent_schema_registry
+	confluentSchemaRegistryRegex := regexp.MustCompile(`confluent_schema_registry\s*=\s*'external://([^']*)'`)
+	confluentSchemaRegistryMatch := confluentSchemaRegistryRegex.FindStringSubmatch(sql)
+	confluentSchemaRegistry := ""
+	if len(confluentSchemaRegistryMatch) > 1 {
+		confluentSchemaRegistry = confluentSchemaRegistryMatch[1]
+	}
+
+	return avroSchemaPrefix, confluentSchemaRegistry
+}
+
+func Interface2StringList(interfaceList interface{}) []string {
+	list := interfaceList.([]interface{})
+	stringList := make([]string, len(list))
+	for i, v := range list {
+		stringList[i] = v.(string)
+	}
+	return stringList
+
 }
