@@ -64,9 +64,9 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 			},
 			CDCInitialScan: {
 				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "cdc initial scan",
 				Required:    true,
+				Description: "cdc initial scan",
+				ForceNew:    true,
 			},
 		},
 	}
