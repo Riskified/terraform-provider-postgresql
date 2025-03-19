@@ -15,6 +15,7 @@ const (
 	CDCAvroSchemaPrefix       = "avro_schema_prefix"
 	CDCRegistryConnectionName = "registry_connection_name"
 	CDCStartFrom              = "start_from"
+	CDCInitialScan            = "initial_scan"
 )
 
 func resourceCockroachDBChangefeed() *schema.Resource {
@@ -39,23 +40,33 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 				Description: "kafka user name",
+				ForceNew:    true,
 			},
 			CDCAvroSchemaPrefix: {
 				Type:         schema.TypeString,
 				Required:     true,
 				ValidateFunc: validation.StringIsNotEmpty,
 				Description:  "avro schema prefix",
+				ForceNew:     true,
 			},
 			CDCRegistryConnectionName: {
 				Type:         schema.TypeString,
 				Required:     true,
 				ValidateFunc: validation.StringIsNotEmpty,
 				Description:  "schema registry url",
+				ForceNew:     true,
 			},
 			CDCStartFrom: {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "cdc start from cursor",
+				ForceNew:    true,
+			},
+			CDCInitialScan: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "cdc initial scan",
+				Required:    true,
 			},
 		},
 	}
@@ -66,7 +77,6 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 	kafkaConnectionName := d.Get(CDCKafkaConnectionName).(string)
 	registryConnectionName := d.Get(CDCRegistryConnectionName).(string)
 	avroSchemaPrefix := d.Get(CDCAvroSchemaPrefix).(string)
-
 	startFrom := d.Get(CDCStartFrom).(string)
 
 	database := db.client.databaseName
@@ -80,11 +90,17 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 		cursorClause = fmt.Sprintf("cursor='%s',", startFrom)
 	}
 
+	var initialScanClause string
+	if d.Get(CDCInitialScan).(string) == "yes" || d.Get(CDCInitialScan).(string) == "true" {
+		initialScanClause = "initial_scan = 'yes',"
+	} else {
+		initialScanClause = "initial_scan = 'no',"
+	}
 	tableList := Interface2StringList(tableListInterface)
 	tableListStr := strings.Join(tableList, ", ")
 	sqlChangefeed := fmt.Sprintf(
-		`CREATE CHANGEFEED FOR TABLE %v INTO "external://%s" WITH updated, %s diff, on_error='pause', format = avro, avro_schema_prefix='%s_', confluent_schema_registry = 'external://%s'`,
-		tableListStr, kafkaConnectionName, cursorClause, avroSchemaPrefix, registryConnectionName,
+		`CREATE CHANGEFEED FOR TABLE %v INTO "external://%s" WITH %s updated, %s diff, on_error='pause', format = avro, avro_schema_prefix='%s_', confluent_schema_registry = 'external://%s'`,
+		tableListStr, kafkaConnectionName, initialScanClause, cursorClause, avroSchemaPrefix, registryConnectionName,
 	)
 	txn, err = startTransaction(db.client, database)
 	var jobID string
@@ -132,11 +148,18 @@ func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceD
 	}
 	// setting the sink uri
 	d.Set(CDCKafkaConnectionName, strings.TrimPrefix(sinkUri, "external://"))
-
 	// setting the avro schema prefix and confluent schema registry
-	avroSchemaPrefix, confluentSchemaRegistry := extractAvroDetails(description)
+	avroSchemaPrefix, confluentSchemaRegistry, initialScanValue, cursorValue := extractDetails(description)
 	d.Set(CDCAvroSchemaPrefix, fmt.Sprintf("%s", strings.TrimSuffix(avroSchemaPrefix, "_")))
 	d.Set(CDCRegistryConnectionName, confluentSchemaRegistry)
+	if initialScanValue == "yes" {
+		d.Set(CDCInitialScan, "yes")
+	} else {
+		d.Set(CDCInitialScan, "no")
+	}
+	if cursorValue != "" {
+		d.Set(CDCStartFrom, cursorValue)
+	}
 
 	return nil
 }
@@ -286,9 +309,28 @@ func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string) er
 	}
 }
 
-func extractAvroDetails(sql string) (string, string) {
-	//sql := `CREATE CHANGEFEED FOR TABLE riskx.public.dd, TABLE riskx.public.bb, TABLE cc, TABLE riskx.public.yy INTO 'external://my_kafka_prefix' WITH OPTIONS (avro_schema_prefix = 'my_avro_prefix_', confluent_schema_registry = 'external://confluence_prefix', diff, format = 'avro', on_error = 'pause', updated)`
-
+//	func extractDetails(sql string) (string, string) {
+//		//sql := `CREATE CHANGEFEED FOR TABLE riskx.public.dd, TABLE riskx.public.bb, TABLE cc, TABLE riskx.public.yy INTO 'external://my_kafka_prefix' WITH OPTIONS (avro_schema_prefix = 'my_avro_prefix_', confluent_schema_registry = 'external://confluence_prefix', diff, format = 'avro', on_error = 'pause', updated)`
+//
+//		// Regular expression to extract the avro_schema_prefix
+//		avroSchemaPrefixRegex := regexp.MustCompile(`avro_schema_prefix\s*=\s*'([^']*)'`)
+//		avroSchemaPrefixMatch := avroSchemaPrefixRegex.FindStringSubmatch(sql)
+//		avroSchemaPrefix := ""
+//		if len(avroSchemaPrefixMatch) > 1 {
+//			avroSchemaPrefix = avroSchemaPrefixMatch[1]
+//		}
+//
+//		// Regular expression to extract the confluent_schema_registry
+//		confluentSchemaRegistryRegex := regexp.MustCompile(`confluent_schema_registry\s*=\s*'external://([^']*)'`)
+//		confluentSchemaRegistryMatch := confluentSchemaRegistryRegex.FindStringSubmatch(sql)
+//		confluentSchemaRegistry := ""
+//		if len(confluentSchemaRegistryMatch) > 1 {
+//			confluentSchemaRegistry = confluentSchemaRegistryMatch[1]
+//		}
+//
+//		return avroSchemaPrefix, confluentSchemaRegistry
+//	}
+func extractDetails(sql string) (string, string, string, string) {
 	// Regular expression to extract the avro_schema_prefix
 	avroSchemaPrefixRegex := regexp.MustCompile(`avro_schema_prefix\s*=\s*'([^']*)'`)
 	avroSchemaPrefixMatch := avroSchemaPrefixRegex.FindStringSubmatch(sql)
@@ -305,7 +347,23 @@ func extractAvroDetails(sql string) (string, string) {
 		confluentSchemaRegistry = confluentSchemaRegistryMatch[1]
 	}
 
-	return avroSchemaPrefix, confluentSchemaRegistry
+	// Regular expression to extract the initial_scan
+	initialScanRegex := regexp.MustCompile(`initial_scan\s*=\s*'([^']*)'`)
+	initialScanMatch := initialScanRegex.FindStringSubmatch(sql)
+	initialScan := ""
+	if len(initialScanMatch) > 1 {
+		initialScan = initialScanMatch[1]
+	}
+
+	// Regular expression to extract the cursor
+	cursorRegex := regexp.MustCompile(`cursor\s*=\s*'([^']*)'`)
+	cursorMatch := cursorRegex.FindStringSubmatch(sql)
+	cursor := ""
+	if len(cursorMatch) > 1 {
+		cursor = cursorMatch[1]
+	}
+
+	return avroSchemaPrefix, confluentSchemaRegistry, initialScan, cursor
 }
 
 func Interface2StringList(interfaceList interface{}) []string {
