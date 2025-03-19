@@ -188,15 +188,6 @@ func resourceCockroachDBChangefeedExists(db *DBConnection, d *schema.ResourceDat
 	return jobExists(txn, d.Id())
 }
 
-func jobExists(db QueryAble, jobID string) (bool, error) {
-	var jobIDExists string
-	err := db.QueryRow("SELECT job_id FROM [SHOW JOBS] WHERE job_id = $1", jobID).Scan(&jobIDExists)
-	if err != nil {
-		return false, err
-	}
-	return jobIDExists == jobID, nil
-}
-
 func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceData) error {
 	if !d.HasChange(CDCtableList) {
 		return nil
@@ -257,6 +248,17 @@ func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceDat
 
 	return resourceCockroachDBChangefeedReadImpl(db, d)
 }
+
+// helper functions
+func jobExists(db QueryAble, jobID string) (bool, error) {
+	var jobIDExists string
+	err := db.QueryRow("SELECT job_id FROM [SHOW JOBS] WHERE job_id = $1", jobID).Scan(&jobIDExists)
+	if err != nil {
+		return false, err
+	}
+	return jobIDExists == jobID, nil
+}
+
 func contains(slice []string, item string) bool {
 	for _, s := range slice {
 		if s == item {
@@ -309,27 +311,6 @@ func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string) er
 	}
 }
 
-//	func extractDetails(sql string) (string, string) {
-//		//sql := `CREATE CHANGEFEED FOR TABLE riskx.public.dd, TABLE riskx.public.bb, TABLE cc, TABLE riskx.public.yy INTO 'external://my_kafka_prefix' WITH OPTIONS (avro_schema_prefix = 'my_avro_prefix_', confluent_schema_registry = 'external://confluence_prefix', diff, format = 'avro', on_error = 'pause', updated)`
-//
-//		// Regular expression to extract the avro_schema_prefix
-//		avroSchemaPrefixRegex := regexp.MustCompile(`avro_schema_prefix\s*=\s*'([^']*)'`)
-//		avroSchemaPrefixMatch := avroSchemaPrefixRegex.FindStringSubmatch(sql)
-//		avroSchemaPrefix := ""
-//		if len(avroSchemaPrefixMatch) > 1 {
-//			avroSchemaPrefix = avroSchemaPrefixMatch[1]
-//		}
-//
-//		// Regular expression to extract the confluent_schema_registry
-//		confluentSchemaRegistryRegex := regexp.MustCompile(`confluent_schema_registry\s*=\s*'external://([^']*)'`)
-//		confluentSchemaRegistryMatch := confluentSchemaRegistryRegex.FindStringSubmatch(sql)
-//		confluentSchemaRegistry := ""
-//		if len(confluentSchemaRegistryMatch) > 1 {
-//			confluentSchemaRegistry = confluentSchemaRegistryMatch[1]
-//		}
-//
-//		return avroSchemaPrefix, confluentSchemaRegistry
-//	}
 func extractDetails(sql string) (string, string, string, string) {
 	// Regular expression to extract the avro_schema_prefix
 	avroSchemaPrefixRegex := regexp.MustCompile(`avro_schema_prefix\s*=\s*'([^']*)'`)
