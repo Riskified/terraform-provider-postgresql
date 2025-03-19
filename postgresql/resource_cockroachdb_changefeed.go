@@ -80,10 +80,7 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 		cursorClause = fmt.Sprintf("cursor='%s',", startFrom)
 	}
 
-	tableList := make([]string, len(tableListInterface))
-	for i, v := range tableListInterface {
-		tableList[i] = v.(string)
-	}
+	tableList := Interface2StringList(tableListInterface)
 	tableListStr := strings.Join(tableList, ", ")
 	sqlChangefeed := fmt.Sprintf(
 		`CREATE CHANGEFEED FOR TABLE %v INTO "external://%s" WITH updated, %s diff, on_error='pause', format = avro, avro_schema_prefix='%s_', confluent_schema_registry = 'external://%s'`,
