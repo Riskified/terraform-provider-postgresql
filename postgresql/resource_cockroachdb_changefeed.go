@@ -324,7 +324,7 @@ func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string, ti
 				return fmt.Errorf("error querying job status: %w", err)
 			}
 
-			if strings.ToUpper(status) == strings.ToUpper(requestedStatus) {
+			if strings.EqualFold(status, requestedStatus) {
 				err = txn.Commit()
 				if err != nil {
 					return err
