@@ -39,7 +39,7 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 			CDCKafkaConnectionName: {
 				Type:        schema.TypeString,
 				Required:    true,
-				Description: "kafka user name",
+				Description: "kafka external connection name",
 				ForceNew:    true,
 			},
 			CDCAvroSchemaPrefix: {
@@ -53,7 +53,7 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 				Type:         schema.TypeString,
 				Required:     true,
 				ValidateFunc: validation.StringIsNotEmpty,
-				Description:  "schema registry url",
+				Description:  "schema registry external connection name",
 				ForceNew:     true,
 			},
 			CDCStartFrom: {
