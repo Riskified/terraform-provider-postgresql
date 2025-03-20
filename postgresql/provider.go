@@ -199,6 +199,8 @@ func Provider() *schema.Provider {
 			"postgresql_function":                  resourcePostgreSQLFunction(),
 			"postgresql_server":                    resourcePostgreSQLServer(),
 			"postgresql_user_mapping":              resourcePostgreSQLUserMapping(),
+			"postgresql_crdb_changefeed":           resourceCockroachDBChangefeed(),
+			"postgresql_crdb_external_connection":  resourceCockroachDBExternalConnection(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
