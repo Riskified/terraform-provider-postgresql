@@ -57,16 +57,18 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 				ForceNew:     true,
 			},
 			CDCStartFrom: {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "cdc start from cursor",
-				ForceNew:    true,
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "cdc start from cursor",
+				ForceNew:     true,
+				ValidateFunc: validateDateTime,
 			},
 			CDCInitialScan: {
-				Type:        schema.TypeString,
-				Required:    true,
-				Description: "cdc initial scan",
-				ForceNew:    true,
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "cdc initial scan",
+				ValidateFunc: validation.StringInSlice([]string{"yes", "no"}, false),
+				ForceNew:     true,
 			},
 		},
 	}
@@ -80,10 +82,6 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 	startFrom := d.Get(CDCStartFrom).(string)
 
 	database := db.client.databaseName
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return fmt.Errorf("Error starting transaction: %w", err)
-	}
 
 	var cursorClause string
 	if startFrom != "" {
@@ -102,11 +100,13 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 		`CREATE CHANGEFEED FOR TABLE %v INTO "external://%s" WITH %s updated, %s diff, on_error='pause', format = avro, avro_schema_prefix='%s_', confluent_schema_registry = 'external://%s'`,
 		tableListStr, kafkaConnectionName, initialScanClause, cursorClause, avroSchemaPrefix, registryConnectionName,
 	)
-	txn, err = startTransaction(db.client, database)
-	var jobID string
-	err = txn.QueryRow(sqlChangefeed).Scan(&jobID)
+	txn, err := startTransaction(db.client, database)
 	if err != nil {
-		return fmt.Errorf("Error creating changefeed: %w", err)
+		return fmt.Errorf("error starting transaction: %w", err)
+	}
+	var jobID string
+	if err = txn.QueryRow(sqlChangefeed).Scan(&jobID); err != nil {
+		return fmt.Errorf("error creating changefeed: %w", err)
 	}
 	if err = txn.Commit(); err != nil {
 		return fmt.Errorf("could not commit transaction: %w", err)
@@ -170,7 +170,9 @@ func resourceCockroachDBChangefeedDelete(db *DBConnection, d *schema.ResourceDat
 		return err
 	}
 	defer deferredRollback(txn)
-	txn.Exec(fmt.Sprintf("CANCEL JOB %s", d.Id()))
+	if _, err = txn.Exec(fmt.Sprintf("CANCEL JOB %s", d.Id())); err != nil {
+		return fmt.Errorf("could not cancel job: %w", err)
+	}
 	if err = txn.Commit(); err != nil {
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
@@ -216,10 +218,15 @@ func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceDat
 		if err = txn.Commit(); err != nil {
 			return fmt.Errorf("could not commit transaction: %w", err)
 		}
-		waitForJobStatus(db, jobID, "PAUSED")
+		if err = waitForJobStatus(db, jobID, "PAUSED"); err != nil {
+			return fmt.Errorf("error waiting for job status to be paused: %w", err)
+		}
 
 		// Alter the changefeed to add new tables
 		txn, err = startTransaction(db.client, "")
+		if err != nil {
+			return fmt.Errorf("error starting transaction: %w", err)
+		}
 		for _, table := range tablesToAdd {
 			_, err = txn.Exec(fmt.Sprintf("ALTER CHANGEFEED %s ADD %s", jobID, table))
 			if err != nil {
@@ -252,7 +259,7 @@ func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceDat
 // helper functions
 func jobExists(db QueryAble, jobID string) (bool, error) {
 	var jobIDExists string
-	err := db.QueryRow("SELECT job_id FROM [SHOW JOBS] WHERE job_id = $1", jobID).Scan(&jobIDExists)
+	err := db.QueryRow(fmt.Sprintf("SELECT job_id FROM [SHOW changefeed JOB %s];", jobID)).Scan(&jobIDExists)
 	if err != nil {
 		return false, err
 	}
@@ -286,28 +293,50 @@ func findTableChanges(currentTableList []string, newTableList []string) ([]strin
 	return tablesToAdd, tablesToRemove
 }
 
-func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string) error {
+func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string, timeoutMinutes ...int) error {
+	timeout := 10
+	if len(timeoutMinutes) > 0 {
+		timeout = timeoutMinutes[0]
+	}
+
+	timeoutChan := time.After(time.Duration(timeout) * time.Minute)
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
 	for {
-		txn, err := startTransaction(db.client, "")
-		if err != nil {
-			return fmt.Errorf("Error starting transaction: %w", err)
-		}
+		select {
+		case <-timeoutChan:
+			return fmt.Errorf("timeout reached while waiting for job status to be %s", requestedStatus)
+		case <-ticker.C:
+			txn, err := startTransaction(db.client, "")
+			if err != nil {
+				return fmt.Errorf("error starting transaction: %w", err)
+			}
 
-		var status string
-		query := fmt.Sprintf("SELECT status FROM [SHOW JOB %s]", jobID)
-		err = txn.QueryRow(query).Scan(&status)
-		if err != nil {
-			txn.Rollback()
-			return fmt.Errorf("Error querying job status: %w", err)
-		}
+			var status string
+			query := fmt.Sprintf("SELECT status FROM [SHOW JOB %s]", jobID)
+			err = txn.QueryRow(query).Scan(&status)
+			if err != nil {
+				err = txn.Rollback()
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("error querying job status: %w", err)
+			}
 
-		if strings.ToUpper(status) == strings.ToUpper(requestedStatus) {
-			txn.Commit()
-			return nil
-		}
+			if strings.ToUpper(status) == strings.ToUpper(requestedStatus) {
+				err = txn.Commit()
+				if err != nil {
+					return err
+				}
+				return nil
+			}
 
-		txn.Commit()
-		time.Sleep(1 * time.Second)
+			err = txn.Commit()
+			if err != nil {
+				return err
+			}
+		}
 	}
 }
 
@@ -355,4 +384,14 @@ func Interface2StringList(interfaceList interface{}) []string {
 	}
 	return stringList
 
+}
+
+func validateDateTime(val interface{}, key string) (warns []string, errs []error) {
+	v := val.(string)
+
+	_, err := time.Parse("2006-01-02 15:04:05", v)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("%q must be a valid RFC3339 datetime, got: %s", key, v))
+	}
+	return
 }

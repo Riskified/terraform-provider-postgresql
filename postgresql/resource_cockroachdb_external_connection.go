@@ -3,7 +3,6 @@ package postgresql
 import (
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"strings"
 )
 
 const (
@@ -48,7 +47,7 @@ func resourceCockroachDBExternalConnectionCreate(db *DBConnection, d *schema.Res
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 	d.SetId(connName)
-	d.Set(ConnUrl, strings.TrimSpace(connUrl))
+	d.Set(ConnUrl, connUrl)
 	return nil
 }
 
@@ -64,11 +63,10 @@ func resourceCockroachDBExternalConnectionReadImpl(db *DBConnection, d *schema.R
 		return fmt.Errorf("Error starting transaction: %w", err)
 	}
 	var connUrl string
-	if err := txn.QueryRow("select connection_uri from [show external connections] where connection_name= $1", connName).Scan(&connUrl); err != nil {
+	if err := txn.QueryRow(fmt.Sprintf("select connection_uri from [show external connection %s]", connName)).Scan(&connUrl); err != nil {
 		return fmt.Errorf("Error reading EXTERNAL CONNECTION: %w", err)
 	}
-	//	d.Set(ConnUrl, strings.TrimSpace(connUrl))
-	d.Set(ConnName, strings.TrimSpace(connName))
+	d.Set(ConnName, connName)
 	return nil
 }
 

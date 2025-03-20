@@ -39,9 +39,11 @@ see https://www.cockroachlabs.com/docs/v25.1/create-external-connection.html for
 This can also be an output from the `postgresql_external_connection` resource.
 see https://www.cockroachlabs.com/docs/v25.1/create-external-connection.html for details
 
-* `start_from` - (Optional) Timestamp for `cursor` to start from. If left empty, the changefeed will start from the current time. cursor can start from the last GC defined at the cluster (default 4 hours)
+* `start_from` - (Optional) Timestamp for `cursor` to start from. If not included, the changefeed will start from the current time. 
+  * date should be in the format of `YYYY-MM-DD HH:MM:SS`
+  * cursor can start from the last GC defined at the cluster (default 4 hours)
 
-* `initial_scan` - (Required) `yes/no` value  
+* `initial_scan` - (optional) `yes/no` value. If not included, the default value is `no`.
     * `yes` - will run initial snapshot the data from the tables.
     * `no` - will not run initial snapshot the data from the tables.
 ## Import Example
