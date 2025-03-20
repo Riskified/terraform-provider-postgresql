@@ -14,7 +14,7 @@ The ``postgresql_crdb_external_connection`` resource creates and manages an exte
 ## Usage
 
 ```hcl
-resource "postgresql_crdb_external_connection" "confluence_yoav" {
+resource "postgresql_crdb_external_connection" "my_confluence" {
   connection_name = "my_external_conn_name"
   connection_url  = "https://registry_url:9091"
 }
@@ -22,11 +22,11 @@ resource "postgresql_crdb_external_connection" "confluence_yoav" {
 
 ## Argument Reference
 
-* `connection_name` - (Required) The name of the external connection. Must be unique on the CockroachDB server instance where it is configured.
+- **`connection_name`** (Required): Specifies the name of the external connection. This name must be unique within the CockroachDB server instance where it's set up.
 
-* `connection_url` - (Required)  
-    * The URL of the external connection.  
-    * The URL must include proper sink_uri's. for example `https://` or `kafka://` with the port.
-for more details https://www.cockroachlabs.com/docs/v25.1/create-external-connection.html#supported-external-storage-and-sinks
-    * for example `https://registry_url:9091` or `kafka://kafka:9092`
-  
+- **`connection_url`** (Required):
+  - Defines the URL for the external connection.
+  - The URL must include a valid sink URI, such as `https://` or `kafka://`, followed by the appropriate port number.
+  - Example URLs: `https://registry_url:9091` or `kafka://kafka:9092`.
+
+For more details, refer to the [CockroachDB documentation](https://www.cockroachlabs.com/docs/v25.1/create-external-connection.html#supported-external-storage-and-sinks).

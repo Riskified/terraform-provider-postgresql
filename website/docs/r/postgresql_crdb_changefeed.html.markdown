@@ -8,9 +8,12 @@ description: |-
 
 # postgresql_crdb_changefeed
 
-The ``postgresql_crdb_changefeed`` resource creates and manages a change-feed.
-* Note that you need to use the `SET CLUSTER SETTING kv.rangefeed.enabled = true` command on your cluster.
+The **`postgresql_crdb_changefeed`** resource is used to create and manage a changefeed.
 
+> **Note:** Ensure that the following command is executed on your cluster to enable rangefeeds:
+> ```sql
+> SET CLUSTER SETTING kv.rangefeed.enabled = true;
+> ```
 
 ## Usage
 
@@ -26,26 +29,26 @@ resource "postgresql_crdb_changefeed" "my_changefeed" {
 
 ## Argument Reference
 
-* `table_list` - (Required) a list of tables to include in the changefeed. The tables must exists in the database.
+- **`table_list`** (Required): A list of tables to include in the changefeed. The specified tables must exist in the database.
 
-* `avro_schema_prefix` - (Required) The prefix to use for the avro schema. The changefeed will be created with a `_` at the end. 
-for example `avro_schema_prefix = 'my_avro_prefix_'` 
+- **`avro_schema_prefix`** (Required): The prefix for the Avro schema. The changefeed will append an underscore (`_`) to the end of this prefix.
+  - Example: `avro_schema_prefix = 'my_avro_prefix_'`.
 
-* `kafka_connection_name` - (Required) external connection to the kafka cluster. The connection must exists in the database.
-This can also be an output from the `postgresql_external_connection` resource.
-see https://www.cockroachlabs.com/docs/v25.1/create-external-connection.html for details
+- **`kafka_connection_name`** (Required): Specifies the external connection to the Kafka cluster. This connection must exist in the database.
+  - This can also be generated from the `postgresql_external_connection` resource.
+  - For details, refer to the [CockroachDB documentation](https://www.cockroachlabs.com/docs/v25.1/create-external-connection.html).
 
-* `registry_connection_name` - (Required) external connection to the schema registry. The connection must exists in the database.
-This can also be an output from the `postgresql_external_connection` resource.
-see https://www.cockroachlabs.com/docs/v25.1/create-external-connection.html for details
+- **`registry_connection_name`** (Required): Specifies the external connection to the schema registry. This connection must exist in the database.
+  - This can also be generated from the `postgresql_external_connection` resource.
+  - For details, refer to the [CockroachDB documentation](https://www.cockroachlabs.com/docs/v25.1/create-external-connection.html).
 
-* `start_from` - (Optional) Timestamp for `cursor` to start from. If not included, the changefeed will start from the current time. 
-  * date should be in the format of `YYYY-MM-DD HH:MM:SS`
-  * cursor can start from the last GC defined at the cluster (default 4 hours)
+- **`start_from`** (Optional): Defines the timestamp for the `cursor` to begin. If omitted, the changefeed starts from the current time.
+  - The date format should be `YYYY-MM-DD HH:MM:SS`.
+  - The cursor can also start from the last garbage collection (GC) timestamp defined in the cluster (default: 4 hours).
 
-* `initial_scan` - (optional) `yes/no` value. If not included, the default value is `no`.
-    * `yes` - will run initial snapshot the data from the tables.
-    * `no` - will not run initial snapshot the data from the tables.
+- **`initial_scan`** (Optional): A `yes/no` value that determines whether to perform an initial snapshot of the table data. The default value is `no`.
+  - **`yes`** — Runs an initial snapshot of the table data.
+  - **`no`** — Does not run an initial snapshot of the table data.
 ## Import Example
 
 `postgresql_crdb_changefeed` supports importing resources.  Supposing the following
@@ -58,11 +61,10 @@ provider "postgresql" {
 
 resource "postgresql_crdb_changefeed" "import_tst" {
   provider = postgresql.mycrdb
-  table_list=["yy"]
+  table_list=["yy,dd,bb,cc"]
   avro_schema_prefix="my_avro_prefix"
   kafka_connection_name="my_kafka_connection"
   registry_connection_name="my_registry_connection"
-  start_from=""
   initial_scan="no"
 }
 ```
