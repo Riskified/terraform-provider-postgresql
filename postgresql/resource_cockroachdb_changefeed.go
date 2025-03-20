@@ -89,7 +89,7 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 	}
 
 	var initialScanClause string
-	if d.Get(CDCInitialScan).(string) == "yes" || d.Get(CDCInitialScan).(string) == "true" {
+	if d.Get(CDCInitialScan).(string) == "yes" {
 		initialScanClause = "initial_scan = 'yes',"
 	} else {
 		initialScanClause = "initial_scan = 'no',"
@@ -137,6 +137,7 @@ func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceD
 	// Setting the table list
 	currentTableListInterface := d.Get(CDCtableList)
 	if len(currentTableListInterface.([]interface{})) == 0 {
+		// in case we're in import mode
 		d.Set(CDCtableList, strings.Split(jobTableString, ","))
 	} else {
 		currentTableList := strings.Split(currentTableListInterface.([]interface{})[0].(string), ",")
