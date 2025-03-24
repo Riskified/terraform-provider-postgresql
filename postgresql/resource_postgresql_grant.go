@@ -272,7 +272,7 @@ func readDatabaseRolePriviges(txn *sql.Tx, db *DBConnection, d *schema.ResourceD
 	var privileges pq.ByteaArray
 	//cockroachdb does not support aclexplode
 	if !db.featureSupported(fetureAclExplode) {
-		query = fmt.Sprintf(`with a as (show grants on database %s for %s) select array_agg(privilege_type) from a`, dbName, role)
+		query = fmt.Sprintf(`with a as (show grants on database %s for %s) select array_agg(privilege_type) from a where grantee='%s'`, dbName, role, role)
 		if err := txn.QueryRow(query).Scan(&privileges); err != nil {
 			return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 		}
@@ -301,7 +301,7 @@ func readSchemaRolePriviges(txn *sql.Tx, db *DBConnection, d *schema.ResourceDat
 		dbName = "\"" + dbName + "\""
 	}
 	if !db.featureSupported(fetureAclExplode) {
-		query = fmt.Sprintf(`with a as ( show grants on schema %s for %s) select array_agg(privilege_type) from a;`, dbName, role)
+		query = fmt.Sprintf(`with a as ( show grants on schema %s for %s) select array_agg(privilege_type) from a where grantee='%s';`, dbName, role, role)
 		if err := txn.QueryRow(query).Scan(&privileges); err != nil {
 			return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 		}
