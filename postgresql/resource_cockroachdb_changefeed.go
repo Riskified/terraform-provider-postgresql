@@ -113,7 +113,7 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 	}
 
 	d.SetId(jobID)
-	d.Set(CDCAvroSchemaPrefix, fmt.Sprintf("%s", avroSchemaPrefix))
+	d.Set(CDCAvroSchemaPrefix, avroSchemaPrefix)
 	d.Set(CDCRegistryConnectionName, registryConnectionName)
 	d.Set(CDCKafkaConnectionName, kafkaConnectionName)
 	d.Set(CDCtableList, tableList)
@@ -151,7 +151,7 @@ func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceD
 	d.Set(CDCKafkaConnectionName, strings.TrimPrefix(sinkUri, "external://"))
 	// setting the avro schema prefix and confluent schema registry
 	avroSchemaPrefix, confluentSchemaRegistry, initialScanValue, cursorValue := extractDetails(description)
-	d.Set(CDCAvroSchemaPrefix, fmt.Sprintf("%s", strings.TrimSuffix(avroSchemaPrefix, "_")))
+	d.Set(CDCAvroSchemaPrefix, strings.TrimSuffix(avroSchemaPrefix, "_"))
 	d.Set(CDCRegistryConnectionName, confluentSchemaRegistry)
 	if initialScanValue == "yes" {
 		d.Set(CDCInitialScan, "yes")
