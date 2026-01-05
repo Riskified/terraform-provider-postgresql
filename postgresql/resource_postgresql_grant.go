@@ -163,6 +163,37 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 
 	database := d.Get("database").(string)
 
+	// CockroachDB does not support certain DDL operations within explicit transactions
+	if db.dbType == dbTypeCockroachdb {
+		// For CockroachDB, we need to connect to the correct database first
+		dbClient := db.client
+		if database != "" && database != dbClient.databaseName {
+			dbClient = dbClient.config.NewClient(database)
+		}
+		dbConn, err := dbClient.Connect()
+		if err != nil {
+			return err
+		}
+
+		// Revoke all privileges before granting
+		if err := revokeRolePrivilegesWithDB(dbConn, d); err != nil {
+			return err
+		}
+		if err := grantRolePrivilegesWithDB(dbConn, d); err != nil {
+			return err
+		}
+
+		d.SetId(generateGrantID(d))
+
+		txn, err := startTransaction(db.client, database)
+		if err != nil {
+			return err
+		}
+		defer deferredRollback(txn)
+
+		return readRolePrivileges(txn, dbConn, d)
+	}
+
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
@@ -220,6 +251,25 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	}
 
 	database := d.Get("database").(string)
+
+	// CockroachDB does not support certain DDL operations within explicit transactions
+	if db.dbType == dbTypeCockroachdb {
+		// For CockroachDB, we need to connect to the correct database first
+		dbClient := db.client
+		if database != "" && database != dbClient.databaseName {
+			dbClient = dbClient.config.NewClient(database)
+		}
+		dbConn, err := dbClient.Connect()
+		if err != nil {
+			return err
+		}
+
+		if err := revokeRolePrivilegesWithDB(dbConn, d); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
@@ -743,6 +793,37 @@ func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		return nil
 	}
 	if _, err := txn.Exec(query); err != nil {
+		return fmt.Errorf("could not execute revoke query: %w", err)
+	}
+	return nil
+}
+
+// grantRolePrivilegesWithDB grants privileges using the DB connection directly (for CockroachDB)
+func grantRolePrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error {
+	privileges := []string{}
+	for _, priv := range d.Get("privileges").(*schema.Set).List() {
+		privileges = append(privileges, priv.(string))
+	}
+
+	if len(privileges) == 0 {
+		log.Printf("[DEBUG] no privileges to grant for role %s in database: %s,", d.Get("role").(string), d.Get("database"))
+		return nil
+	}
+
+	query := createGrantQuery(d, privileges)
+
+	_, err := db.Exec(query)
+	return err
+}
+
+// revokeRolePrivilegesWithDB revokes privileges using the DB connection directly (for CockroachDB)
+func revokeRolePrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error {
+	query := createRevokeQuery(d)
+	if len(query) == 0 {
+		// Query is empty, don't run anything
+		return nil
+	}
+	if _, err := db.Exec(query); err != nil {
 		return fmt.Errorf("could not execute revoke query: %w", err)
 	}
 	return nil
