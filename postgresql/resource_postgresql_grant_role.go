@@ -75,23 +75,35 @@ func resourcePostgreSQLGrantRoleCreate(db *DBConnection, d *schema.ResourceData)
 		)
 	}
 
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
+	// CockroachDB does not support role grants within explicit transactions
+	if db.dbType == dbTypeCockroachdb {
+		// Revoke the granted roles before granting them again.
+		if err := revokeRoleWithDB(db, d); err != nil {
+			return err
+		}
 
-	// Revoke the granted roles before granting them again.
-	if err = revokeRole(txn, d); err != nil {
-		return err
-	}
+		if err := grantRoleWithDB(db, d); err != nil {
+			return err
+		}
+	} else {
+		txn, err := startTransaction(db.client, "")
+		if err != nil {
+			return err
+		}
+		defer deferredRollback(txn)
 
-	if err = grantRole(txn, d); err != nil {
-		return err
-	}
+		// Revoke the granted roles before granting them again.
+		if err = revokeRole(txn, d); err != nil {
+			return err
+		}
 
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("could not commit transaction: %w", err)
+		if err = grantRole(txn, d); err != nil {
+			return err
+		}
+
+		if err = txn.Commit(); err != nil {
+			return fmt.Errorf("could not commit transaction: %w", err)
+		}
 	}
 
 	d.SetId(generateGrantRoleID(d))
@@ -107,18 +119,25 @@ func resourcePostgreSQLGrantRoleDelete(db *DBConnection, d *schema.ResourceData)
 		)
 	}
 
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
+	// CockroachDB does not support role grants within explicit transactions
+	if db.dbType == dbTypeCockroachdb {
+		if err := revokeRoleWithDB(db, d); err != nil {
+			return err
+		}
+	} else {
+		txn, err := startTransaction(db.client, "")
+		if err != nil {
+			return err
+		}
+		defer deferredRollback(txn)
 
-	if err = revokeRole(txn, d); err != nil {
-		return err
-	}
+		if err = revokeRole(txn, d); err != nil {
+			return err
+		}
 
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("could not commit transaction: %w", err)
+		if err = txn.Commit(); err != nil {
+			return fmt.Errorf("could not commit transaction: %w", err)
+		}
 	}
 
 	return nil
@@ -202,6 +221,27 @@ func revokeRole(txn *sql.Tx, d *schema.ResourceData) error {
 	query := createRevokeRoleQuery(d)
 	if _, err := txn.Exec(query); err != nil {
 		return fmt.Errorf("could not execute revoke query: %w", err)
+	}
+	return nil
+}
+
+// grantRoleWithDB grants a role using the DB connection directly (for CockroachDB)
+func grantRoleWithDB(db *DBConnection, d *schema.ResourceData) error {
+	query := createGrantRoleQuery(d)
+	if _, err := db.Exec(query); err != nil {
+		return fmt.Errorf("could not execute grant query: %w", err)
+	}
+	return nil
+}
+
+// revokeRoleWithDB revokes a role using the DB connection directly (for CockroachDB)
+func revokeRoleWithDB(db *DBConnection, d *schema.ResourceData) error {
+	query := createRevokeRoleQuery(d)
+	if _, err := db.Exec(query); err != nil {
+		// Ignore error if the role is not a member (for CockroachDB compatibility)
+		if !strings.Contains(err.Error(), "is not a member") {
+			return fmt.Errorf("could not execute revoke query: %w", err)
+		}
 	}
 	return nil
 }
