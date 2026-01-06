@@ -311,8 +311,16 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	sql := fmt.Sprintf("CREATE ROLE %s%s", pq.QuoteIdentifier(roleName), createStr)
-	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("error creating role %s: %w", roleName, err)
+	// CockroachDB does not support certain DDL operations within explicit transactions
+	// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
+	if db.dbType == dbTypeCockroachdb {
+		if _, err := db.Exec(sql); err != nil {
+			return fmt.Errorf("error creating role %s: %w", roleName, err)
+		}
+	} else {
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("error creating role %s: %w", roleName, err)
+		}
 	}
 
 	if err = grantRoles(txn, d); err != nil {
@@ -347,8 +355,12 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		}
 	}
 
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("could not commit transaction: %w", err)
+	// CockroachDB does not support certain DDL operations within explicit transactions
+	// Skip commit for CockroachDB as DDL was executed outside the transaction
+	if db.dbType != dbTypeCockroachdb {
+		if err = txn.Commit(); err != nil {
+			return fmt.Errorf("could not commit transaction: %w", err)
+		}
 	}
 
 	d.SetId(roleName)
@@ -391,13 +403,25 @@ func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) erro
 		}
 	}
 	if !d.Get(roleSkipDropRoleAttr).(bool) {
-		if _, err := txn.Exec(fmt.Sprintf("DROP ROLE %s", pq.QuoteIdentifier(roleName))); err != nil {
-			return fmt.Errorf("could not delete role %s: %w", roleName, err)
+		// CockroachDB does not support certain DDL operations within explicit transactions
+		// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
+		if db.dbType == dbTypeCockroachdb {
+			if _, err := db.Exec(fmt.Sprintf("DROP ROLE %s", pq.QuoteIdentifier(roleName))); err != nil {
+				return fmt.Errorf("could not delete role %s: %w", roleName, err)
+			}
+		} else {
+			if _, err := txn.Exec(fmt.Sprintf("DROP ROLE %s", pq.QuoteIdentifier(roleName))); err != nil {
+				return fmt.Errorf("could not delete role %s: %w", roleName, err)
+			}
 		}
 	}
 
-	if err := txn.Commit(); err != nil {
-		return fmt.Errorf("Error committing schema: %w", err)
+	// CockroachDB does not support certain DDL operations within explicit transactions
+	// Skip commit for CockroachDB as DDL was executed outside the transaction
+	if db.dbType != dbTypeCockroachdb {
+		if err := txn.Commit(); err != nil {
+			return fmt.Errorf("Error committing schema: %w", err)
+		}
 	}
 
 	d.SetId("")
