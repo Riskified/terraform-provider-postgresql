@@ -118,6 +118,17 @@ func resourcePostgreSQLSchema() *schema.Resource {
 
 func resourcePostgreSQLSchemaCreate(db *DBConnection, d *schema.ResourceData) error {
 	database := getDatabase(d, db.client.databaseName)
+
+	// CockroachDB does not support certain DDL operations within explicit transactions
+	// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
+	if db.dbType == dbTypeCockroachdb {
+		if err := createSchemaWithDB(db, d); err != nil {
+			return err
+		}
+		d.SetId(generateSchemaID(d, database))
+		return resourcePostgreSQLSchemaReadImpl(db, d)
+	}
+
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
@@ -228,16 +239,128 @@ func createSchema(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
+// createSchemaWithDB creates a schema outside of a transaction for CockroachDB
+func createSchemaWithDB(db *DBConnection, d *schema.ResourceData) error {
+	schemaName := d.Get(schemaNameAttr).(string)
+
+	// Check if previous tasks haven't already created schema
+	var foundSchema bool
+	err := db.QueryRow(`SELECT TRUE FROM pg_catalog.pg_namespace WHERE nspname = $1`, schemaName).Scan(&foundSchema)
+
+	queries := []string{}
+	switch {
+	case err == sql.ErrNoRows:
+		b := bytes.NewBufferString("CREATE SCHEMA ")
+		if db.featureSupported(featureSchemaCreateIfNotExist) {
+			if v := d.Get(schemaIfNotExists); v.(bool) {
+				fmt.Fprint(b, "IF NOT EXISTS ")
+			}
+		}
+		fmt.Fprint(b, pq.QuoteIdentifier(schemaName))
+
+		switch v, ok := d.GetOk(schemaOwnerAttr); {
+		case ok:
+			fmt.Fprint(b, " AUTHORIZATION ", pq.QuoteIdentifier(v.(string)))
+		}
+		queries = append(queries, b.String())
+
+	case err != nil:
+		return fmt.Errorf("Error looking for schema: %w", err)
+
+	default:
+		// The schema already exists, we just set the owner.
+		if err := setSchemaOwnerWithDB(db, d); err != nil {
+			return err
+		}
+	}
+
+	// ACL objects that can generate the necessary SQL
+	type RoleKey string
+	var schemaPolicies map[RoleKey]acl.Schema
+
+	if policiesRaw, ok := d.GetOk(schemaPolicyAttr); ok {
+		policiesList := policiesRaw.(*schema.Set).List()
+
+		schemaPolicies = make(map[RoleKey]acl.Schema, len(policiesList))
+
+		for _, policyRaw := range policiesList {
+			policyMap := policyRaw.(map[string]interface{})
+			rolePolicy := schemaPolicyToACL(policyMap)
+
+			roleKey := RoleKey(strings.ToLower(rolePolicy.Role))
+			if existingRolePolicy, ok := schemaPolicies[roleKey]; ok {
+				schemaPolicies[roleKey] = existingRolePolicy.Merge(rolePolicy)
+			} else {
+				schemaPolicies[roleKey] = rolePolicy
+			}
+		}
+	}
+
+	for _, policy := range schemaPolicies {
+		queries = append(queries, policy.Grants(schemaName)...)
+	}
+
+	for _, query := range queries {
+		if _, err = db.Exec(query); err != nil {
+			return fmt.Errorf("Error creating schema %s: %w", schemaName, err)
+		}
+	}
+
+	return nil
+}
+
+// setSchemaOwnerWithDB sets the schema owner outside of a transaction for CockroachDB
+func setSchemaOwnerWithDB(db *DBConnection, d *schema.ResourceData) error {
+	schemaName := d.Get(schemaNameAttr).(string)
+	owner := d.Get(schemaOwnerAttr).(string)
+	if owner == "" {
+		return nil
+	}
+	sql := fmt.Sprintf("ALTER SCHEMA %s OWNER TO %s", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(owner))
+	if _, err := db.Exec(sql); err != nil {
+		return fmt.Errorf("Error setting schema owner: %w", err)
+	}
+	return nil
+}
+
 func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) error {
 	database := getDatabase(d, db.client.databaseName)
+	schemaName := d.Get(schemaNameAttr).(string)
+
+	// CockroachDB does not support certain DDL operations within explicit transactions
+	// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
+	if db.dbType == dbTypeCockroachdb {
+		if schemaName != "public" {
+			exists, err := schemaExistsWithDB(db, schemaName)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				d.SetId("")
+				return nil
+			}
+
+			dropMode := "RESTRICT"
+			if d.Get(schemaDropCascade).(bool) {
+				dropMode = "CASCADE"
+			}
+
+			sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
+			if _, err = db.Exec(sql); err != nil {
+				return fmt.Errorf("Error deleting schema: %w", err)
+			}
+			d.SetId("")
+		} else {
+			log.Printf("cannot delete schema %s", schemaName)
+		}
+		return nil
+	}
 
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
-
-	schemaName := d.Get(schemaNameAttr).(string)
 
 	if schemaName != "public" {
 
