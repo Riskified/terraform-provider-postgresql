@@ -158,11 +158,11 @@ func resourcePostgreSQLSchemaCreate(db *DBConnection, d *schema.ResourceData) er
 	}); err != nil {
 		return err
 	}
-
-	if err := txn.Commit(); err != nil {
-		return fmt.Errorf("Error committing schema: %w", err)
+	if db.dbType != dbTypeCockroachdb {
+		if err := txn.Commit(); err != nil {
+			return fmt.Errorf("Error committing schema: %w", err)
+		}
 	}
-
 	d.SetId(generateSchemaID(d, database))
 
 	return resourcePostgreSQLSchemaReadImpl(db, d)
@@ -520,8 +520,10 @@ func resourcePostgreSQLSchemaUpdate(db *DBConnection, d *schema.ResourceData) er
 		return err
 	}
 
-	if err := txn.Commit(); err != nil {
-		return fmt.Errorf("Error committing schema: %w", err)
+	if db.dbType != dbTypeCockroachdb {
+		if err := txn.Commit(); err != nil {
+			return fmt.Errorf("Error committing schema: %w", err)
+		}
 	}
 
 	return resourcePostgreSQLSchemaReadImpl(db, d)
