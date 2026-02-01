@@ -1,12 +1,14 @@
 package postgresql
 
 import (
+	"database/sql"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 const (
@@ -108,8 +110,10 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 	if err = txn.QueryRow(sqlChangefeed).Scan(&jobID); err != nil {
 		return fmt.Errorf("error creating changefeed: %w", err)
 	}
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("could not commit transaction: %w", err)
+	if db.dbType != dbTypeCockroachdb {
+		if err = txn.Commit(); err != nil {
+			return fmt.Errorf("could not commit transaction: %w", err)
+		}
 	}
 
 	d.SetId(jobID)
@@ -122,14 +126,20 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 }
 
 func resourceCockroachDBChangefeedRead(db *DBConnection, d *schema.ResourceData) error {
+	exists, err := resourceCockroachDBChangefeedExists(db, d)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return resourceCockroachDBChangefeedCreate(db, d)
+	}
 	return resourceCockroachDBChangefeedReadImpl(db, d)
-	//return nil
 }
 
 func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceData) error {
 	jobID := d.Id()
 	var sinkUri, jobTableString, description string
-	err := db.QueryRow(fmt.Sprintf("select sink_uri,topics,description from [show changefeed job %s];", jobID)).Scan(&sinkUri, &jobTableString, &description)
+	err := db.QueryRow(fmt.Sprintf("select sink_uri,topics,description from [show changefeed job %s]  where status='running';", jobID)).Scan(&sinkUri, &jobTableString, &description)
 	if err != nil {
 		return fmt.Errorf("Can't retrieve job details: %w", err)
 	}
@@ -260,8 +270,11 @@ func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceDat
 // helper functions
 func jobExists(db QueryAble, jobID string) (bool, error) {
 	var jobIDExists string
-	err := db.QueryRow(fmt.Sprintf("SELECT job_id FROM [SHOW changefeed JOB %s];", jobID)).Scan(&jobIDExists)
+	err := db.QueryRow(fmt.Sprintf("SELECT job_id FROM [SHOW changefeed JOB %s]  where status='running';", jobID)).Scan(&jobIDExists)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
 		return false, err
 	}
 	return jobIDExists == jobID, nil
