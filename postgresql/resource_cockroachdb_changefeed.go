@@ -139,7 +139,7 @@ func resourceCockroachDBChangefeedRead(db *DBConnection, d *schema.ResourceData)
 func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceData) error {
 	jobID := d.Id()
 	var sinkUri, jobTableString, description string
-	err := db.QueryRow(fmt.Sprintf("select sink_uri,topics,description from [show changefeed job %s]  where status='running';", jobID)).Scan(&sinkUri, &jobTableString, &description)
+	err := db.QueryRow(fmt.Sprintf("select sink_uri,topics,description from [show changefeed job %s];", jobID)).Scan(&sinkUri, &jobTableString, &description)
 	if err != nil {
 		return fmt.Errorf("Can't retrieve job details: %w", err)
 	}
