@@ -68,6 +68,32 @@ func skipIfNotAcc(t *testing.T) {
 	}
 }
 
+// skipIfNotPostgres skips the test if the connected database is not standard PostgreSQL
+// (i.e. it is CockroachDB). Use this for tests that cover features absent in CockroachDB
+// such as extensions, replication slots, publications, subscriptions, and FDW.
+func skipIfNotPostgres(t *testing.T) {
+	client := testAccProvider.Meta().(*Client)
+	db, err := client.Connect()
+	if err != nil {
+		t.Fatalf("could not connect to database: %v", err)
+	}
+	if db.dbType == dbTypeCockroachdb {
+		t.Skip("Skip test: This test is not supported on CockroachDB")
+	}
+}
+
+// skipIfNotCockroachDB skips the test if the connected database is not CockroachDB.
+func skipIfNotCockroachDB(t *testing.T) {
+	client := testAccProvider.Meta().(*Client)
+	db, err := client.Connect()
+	if err != nil {
+		t.Fatalf("could not connect to database: %v", err)
+	}
+	if db.dbType != dbTypeCockroachdb {
+		t.Skip("Skip test: This test can only run on CockroachDB")
+	}
+}
+
 // Skip tests on RDS like environments
 func skipIfNotSuperuser(t *testing.T) {
 	if os.Getenv("PGSUPERUSER") == "false" {

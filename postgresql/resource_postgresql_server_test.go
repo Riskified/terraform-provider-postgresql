@@ -13,6 +13,7 @@ func TestAccPostgresqlServer_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureServer)
 			testSuperuserPreCheck(t)
 		},
@@ -125,6 +126,7 @@ func TestAccPostgresqlServer_Update(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureServer)
 			testSuperuserPreCheck(t)
 		},
@@ -239,6 +241,7 @@ resource "postgresql_server" "cascade" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureServer)
 		},
 		Providers:    testAccProviders,

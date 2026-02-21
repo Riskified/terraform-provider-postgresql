@@ -13,7 +13,10 @@ import (
 
 func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			skipIfNotPostgres(t)
+		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
 		Steps: []resource.TestStep{
@@ -108,7 +111,10 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 
 func TestAccPostgresqlDatabase_DefaultOwner(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			skipIfNotPostgres(t)
+		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
 		Steps: []resource.TestStep{
@@ -137,6 +143,7 @@ func TestAccPostgresqlDatabase_Update(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 
 			client := testAccProvider.Meta().(*Client)
 			db, err := client.Connect()
@@ -205,7 +212,10 @@ resource postgresql_database "test_db" {
 }
 `
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			skipIfNotPostgres(t)
+		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
 		Steps: []resource.TestStep{
@@ -247,7 +257,10 @@ resource postgresql_database "test_db" {
 }
 `
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			skipIfNotPostgres(t)
+		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
 		Steps: []resource.TestStep{

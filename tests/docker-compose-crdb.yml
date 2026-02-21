@@ -1,0 +1,19 @@
+version: "3"
+
+services:
+    cockroachdb:
+        image: cockroachdb/cockroach:${CRDB_IMAGE_TAG}
+        command:
+          - "start-single-node"
+          - "--accept-sql-without-tls"
+        environment:
+            - COCKROACH_USER=${COCKROACH_USER:-crdb}
+            - COCKROACH_PASSWORD=${COCKROACH_PASSWORD:-crdb}
+        ports:
+            - "26257:26257"
+            - "8080:8080"
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:8080/health?ready=1"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
