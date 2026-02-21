@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        pgversion: [15, 14, 13, 12, 11]
+        pgversion: [15, 16, 17, 18]
 
     env:
       PGVERSION: ${{ matrix.pgversion }}
@@ -34,3 +34,40 @@ jobs:
 
       - name: testacc
         run: make testacc
+
+  test-crdb:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - crdbversion: 24.3
+            crdb_image_tag: latest-v24.3
+          - crdbversion: 25.2
+            crdb_image_tag: latest-v25.2
+          - crdbversion: 25.4
+            crdb_image_tag: latest-v25.4
+          - crdbversion: 26.1
+            crdb_image_tag: latest-v26.1
+
+    env:
+      CRDBVERSION: ${{ matrix.crdbversion }}
+      CRDB_IMAGE_TAG: ${{ matrix.crdb_image_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+
+      - name: test
+        run: make test
+
+      - name: vet
+        run: make vet
+
+      - name: testacc_crdb
+        run: make testacc_crdb

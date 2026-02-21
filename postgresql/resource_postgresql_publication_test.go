@@ -106,6 +106,7 @@ func TestAccPostgresqlPublication_Database(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
@@ -157,6 +158,7 @@ func TestAccPostgresqlPublication_UpdateTables(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
@@ -228,6 +230,7 @@ func TestAccPostgresqlPublication_UpdatePublishParams(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testCheckCompatibleVersion(t, featurePubTruncate)
 			testSuperuserPreCheck(t)
@@ -304,6 +307,7 @@ func TestAccPostgresqlPublication_UpdatePublishParamsWithoutTruncate(t *testing.
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testCheckCompatibleVersion(t, featurePubWithoutTruncate)
 			testSuperuserPreCheck(t)
@@ -379,6 +383,7 @@ func TestAccPostgresqlPublication_UpdateOwner(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
@@ -441,6 +446,7 @@ func TestAccPostgresqlPublication_UpdateName(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
@@ -521,6 +527,7 @@ resource "postgresql_publication" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testCheckCompatibleVersion(t, featurePubTruncate)
 			testSuperuserPreCheck(t)
@@ -590,6 +597,7 @@ resource "postgresql_publication" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testCheckCompatibleVersion(t, featurePubWithoutTruncate)
 			testSuperuserPreCheck(t)
@@ -650,6 +658,7 @@ resource "postgresql_publication" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
@@ -690,6 +699,7 @@ resource "postgresql_publication" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testCheckCompatibleVersion(t, featurePublishViaRoot)
 			testSuperuserPreCheck(t)
@@ -771,6 +781,7 @@ resource "postgresql_publication" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},

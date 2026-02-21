@@ -387,6 +387,12 @@ func generateDefaultPrivilegesID(d *schema.ResourceData) string {
 
 // grantRoleDefaultPrivilegesWithDB grants default privileges outside of a transaction for CockroachDB
 func grantRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error {
+	database := d.Get("database").(string)
+	db, err := connectToDatabase(db, database)
+	if err != nil {
+		return fmt.Errorf("could not connect to database %s: %w", database, err)
+	}
+
 	role := d.Get("role").(string)
 	pgSchema := d.Get("schema").(string)
 
@@ -418,8 +424,7 @@ func grantRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) 
 	if d.Get("with_grant_option").(bool) {
 		query = query + " WITH GRANT OPTION"
 	}
-	_, err := db.Exec(query)
-	if err != nil {
+	if _, err = db.Exec(query); err != nil {
 		return fmt.Errorf("could not alter default privileges: %w", err)
 	}
 
@@ -428,6 +433,12 @@ func grantRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) 
 
 // revokeRoleDefaultPrivilegesWithDB revokes default privileges outside of a transaction for CockroachDB
 func revokeRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error {
+	database := d.Get("database").(string)
+	db, err := connectToDatabase(db, database)
+	if err != nil {
+		return fmt.Errorf("could not connect to database %s: %w", database, err)
+	}
+
 	pgSchema := d.Get("schema").(string)
 
 	var inSchema string
@@ -451,6 +462,12 @@ func revokeRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData)
 
 // readRoleDefaultPrivilegesWithDB reads default privileges outside of a transaction for CockroachDB
 func readRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error {
+	database := d.Get("database").(string)
+	db, err := connectToDatabase(db, database)
+	if err != nil {
+		return fmt.Errorf("could not connect to database %s: %w", database, err)
+	}
+
 	role := d.Get("role").(string)
 	owner := d.Get("owner").(string)
 	pgSchema := d.Get("schema").(string)
