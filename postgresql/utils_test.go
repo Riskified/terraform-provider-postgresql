@@ -438,7 +438,7 @@ func testCheckSchemasPrivileges(t *testing.T, dbName, roleName string, schemas [
 	}
 	defer func() {
 		for _, schema := range schemas {
-			adminDB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.usage_probe", schema))
+			_, _ = adminDB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.usage_probe", schema))
 		}
 	}()
 

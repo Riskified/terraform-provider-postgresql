@@ -221,7 +221,7 @@ func TestAccPostgresqlRole_AdminGranted(t *testing.T) {
 		if _, err := db.Exec(fmt.Sprintf(`CREATE ROLE "%s"`, helperRole)); err != nil {
 			t.Fatalf("could not create helper role: %v", err)
 		}
-		defer db.Exec(fmt.Sprintf(`DROP ROLE IF EXISTS "%s"`, helperRole))
+		defer func() { _, _ = db.Exec(fmt.Sprintf(`DROP ROLE IF EXISTS "%s"`, helperRole)) }()
 		if _, err := db.Exec(fmt.Sprintf(`GRANT "%s" TO "%s" WITH ADMIN OPTION`, helperRole, admin)); err != nil {
 			t.Fatalf("could not grant admin option on helper role: %v", err)
 		}
