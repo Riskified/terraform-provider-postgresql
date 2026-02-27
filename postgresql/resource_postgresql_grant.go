@@ -509,7 +509,18 @@ func readRolePrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData) e
 		return readForeignServerRolePrivileges(txn, d, roleOID)
 
 	case "function", "procedure", "routine":
-		query = `
+		if !db.featureSupported(fetureAclExplode) {
+			// CockroachDB: pg_proc.proacl is always NULL; use information_schema instead
+			query = fmt.Sprintf(
+				`SELECT routine_name, array_agg(privilege_type)
+FROM information_schema.role_routine_grants
+WHERE routine_schema = '%s'
+AND grantee = '%s'
+GROUP BY routine_name`,
+				d.Get("schema"), role)
+			rows, err = txn.Query(query)
+		} else {
+			query = `
 SELECT pg_proc.proname, array_remove(array_agg(privilege_type), NULL)
 FROM pg_proc
 JOIN pg_namespace ON pg_namespace.oid = pg_proc.pronamespace
@@ -524,9 +535,10 @@ USING (proname, pronamespace)
       WHERE nspname = $2
 GROUP BY pg_proc.proname
 `
-		rows, err = txn.Query(
-			query, roleOID, d.Get("schema"),
-		)
+			rows, err = txn.Query(
+				query, roleOID, d.Get("schema"),
+			)
+		}
 
 	case "column":
 		return readColumnRolePrivileges(txn, d)

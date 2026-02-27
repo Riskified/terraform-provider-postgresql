@@ -18,6 +18,7 @@ var schemaQueries = map[string]string{
 	FROM information_schema.schemata
 	WHERE schema_name NOT LIKE 'pg_%'
 	AND schema_name <> 'information_schema'
+	AND schema_name <> 'crdb_internal'
 	`,
 }
 

@@ -61,6 +61,9 @@ const (
 	featureTransactionIsolation
 	featureSysPrivileges
 	featureFollowerReads
+	featureColumnPrivileges
+	featureForeignDataWrapper
+	featureRoleRename
 )
 
 var (
@@ -158,6 +161,10 @@ var (
 		featureTransactionIsolation: semver.MustParseRange("<1.0.0"),
 		featureSysPrivileges:        semver.MustParseRange("<1.0.0"),
 		featureFollowerReads:        semver.MustParseRange("<1.0.0"),
+
+		featureColumnPrivileges:   semver.MustParseRange(">=9.0.0"),
+		featureForeignDataWrapper: semver.MustParseRange(">=9.0.0"),
+		featureRoleRename:         semver.MustParseRange(">=8.1.0"),
 	}
 
 	// Mapping of feature flags to versions
@@ -241,7 +248,8 @@ var (
 		// not supported in Cockroachdb
 		featureServer: semver.MustParseRange("<1.0.0"),
 
-		featureDatabaseOwnerRole: semver.MustParseRange(">=20.2.19"),
+		// pg_database_owner role is a PostgreSQL 15+ concept; not present in CockroachDB
+		featureDatabaseOwnerRole: semver.MustParseRange("<1.0.0"),
 
 		//aclexplode function not supported in Cockroachdb
 		// see https://www.cockroachlabs.com/docs/stable/functions-and-operators
@@ -272,6 +280,15 @@ var (
 		featureTransactionIsolation: semver.MustParseRange(">=23.2.0"),
 		featureSysPrivileges:        semver.MustParseRange(">=22.2.0"),
 		featureFollowerReads:        semver.MustParseRange(">=22.2.0"),
+
+		// Column-level GRANT/REVOKE syntax not supported in CockroachDB
+		featureColumnPrivileges: semver.MustParseRange("<1.0.0"),
+
+		// FOREIGN DATA WRAPPER not supported in CockroachDB
+		featureForeignDataWrapper: semver.MustParseRange("<1.0.0"),
+
+		// ALTER ROLE ... RENAME TO not supported in CockroachDB
+		featureRoleRename: semver.MustParseRange("<1.0.0"),
 	}
 )
 
