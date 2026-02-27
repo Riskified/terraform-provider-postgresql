@@ -165,12 +165,7 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 
 	// CockroachDB does not support certain DDL operations within explicit transactions
 	if db.dbType == dbTypeCockroachdb {
-		// For CockroachDB, we need to connect to the correct database first
-		dbClient := db.client
-		if database != "" && database != dbClient.databaseName {
-			dbClient = dbClient.config.NewClient(database)
-		}
-		dbConn, err := dbClient.Connect()
+		dbConn, err := connectToDatabase(db, database)
 		if err != nil {
 			return err
 		}
@@ -254,12 +249,7 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 
 	// CockroachDB does not support certain DDL operations within explicit transactions
 	if db.dbType == dbTypeCockroachdb {
-		// For CockroachDB, we need to connect to the correct database first
-		dbClient := db.client
-		if database != "" && database != dbClient.databaseName {
-			dbClient = dbClient.config.NewClient(database)
-		}
-		dbConn, err := dbClient.Connect()
+		dbConn, err := connectToDatabase(db, database)
 		if err != nil {
 			return err
 		}

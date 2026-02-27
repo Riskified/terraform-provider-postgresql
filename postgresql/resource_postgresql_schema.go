@@ -122,11 +122,15 @@ func resourcePostgreSQLSchemaCreate(db *DBConnection, d *schema.ResourceData) er
 	// CockroachDB does not support certain DDL operations within explicit transactions
 	// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
 	if db.dbType == dbTypeCockroachdb {
-		if err := createSchemaWithDB(db, d); err != nil {
+		dbConn, err := connectToDatabase(db, database)
+		if err != nil {
+			return err
+		}
+		if err := createSchemaWithDB(dbConn, d); err != nil {
 			return err
 		}
 		d.SetId(generateSchemaID(d, database))
-		return resourcePostgreSQLSchemaReadImpl(db, d)
+		return resourcePostgreSQLSchemaReadImpl(dbConn, d)
 	}
 
 	txn, err := startTransaction(db.client, database)
@@ -331,7 +335,11 @@ func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) er
 	// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
 	if db.dbType == dbTypeCockroachdb {
 		if schemaName != "public" {
-			exists, err := schemaExistsWithDB(db, schemaName)
+			dbConn, err := connectToDatabase(db, database)
+			if err != nil {
+				return err
+			}
+			exists, err := schemaExistsWithDB(dbConn, schemaName)
 			if err != nil {
 				return err
 			}
@@ -346,7 +354,7 @@ func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) er
 			}
 
 			sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
-			if _, err = db.Exec(sql); err != nil {
+			if _, err = dbConn.Exec(sql); err != nil {
 				return fmt.Errorf("Error deleting schema: %w", err)
 			}
 			d.SetId("")
