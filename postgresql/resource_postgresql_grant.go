@@ -130,11 +130,8 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 }
 
 func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) error {
-	if err := validateFeatureSupport(db, d); err != nil {
-		return fmt.Errorf("feature is not supported: %v", err)
-	}
-
-	// Validate parameters.
+	// Validate parameters first (DB-agnostic), so validation errors are reported
+	// regardless of DB type/version.
 	objectType := d.Get("object_type").(string)
 	if d.Get("schema").(string) == "" && !sliceContainsStr([]string{"database", "foreign_data_wrapper", "foreign_server"}, objectType) {
 		return fmt.Errorf("parameter 'schema' is mandatory for postgresql_grant resource")
@@ -159,6 +156,10 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 	}
 	if err := validatePrivileges(d); err != nil {
 		return err
+	}
+
+	if err := validateFeatureSupport(db, d); err != nil {
+		return fmt.Errorf("feature is not supported: %v", err)
 	}
 
 	database := d.Get("database").(string)
@@ -966,6 +967,18 @@ func validateFeatureSupport(db *DBConnection, d *schema.ResourceData) error {
 		return fmt.Errorf(
 			"privelege type System is not supported for this version (%s)",
 			db.version,
+		)
+	}
+	if d.Get("object_type") == "column" && !db.featureSupported(featureColumnPrivileges) {
+		return fmt.Errorf(
+			"object type COLUMN is not supported for this version (%s)",
+			db.version,
+		)
+	}
+	if (d.Get("object_type") == "foreign_data_wrapper" || d.Get("object_type") == "foreign_server") && !db.featureSupported(featureForeignDataWrapper) {
+		return fmt.Errorf(
+			"object type %s is not supported for this version (%s)",
+			d.Get("object_type"), db.version,
 		)
 	}
 	return nil

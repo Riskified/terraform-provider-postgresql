@@ -68,6 +68,9 @@ func resourcePostgreSQLSubscription() *schema.Resource {
 }
 
 func resourcePostgreSQLSubscriptionCreate(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featurePublication) {
+		return fmt.Errorf("postgresql_subscription resource is not supported for this version (%s)", db.version)
+	}
 	subName := d.Get("name").(string)
 	databaseName := getDatabaseForSubscription(d, db.client.databaseName)
 
@@ -105,6 +108,9 @@ func resourcePostgreSQLSubscriptionCreate(db *DBConnection, d *schema.ResourceDa
 }
 
 func resourcePostgreSQLSubscriptionRead(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featurePublication) {
+		return fmt.Errorf("postgresql_subscription resource is not supported for this version (%s)", db.version)
+	}
 	return resourcePostgreSQLSubscriptionReadImpl(db, d)
 }
 
@@ -176,6 +182,9 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 }
 
 func resourcePostgreSQLSubscriptionDelete(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featurePublication) {
+		return fmt.Errorf("postgresql_subscription resource is not supported for this version (%s)", db.version)
+	}
 	subName := d.Get("name").(string)
 	createSlot := d.Get("create_slot").(bool)
 
@@ -212,6 +221,9 @@ func resourcePostgreSQLSubscriptionDelete(db *DBConnection, d *schema.ResourceDa
 }
 
 func resourcePostgreSQLSubscriptionExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
+	if !db.featureSupported(featurePublication) {
+		return false, nil
+	}
 	var subName string
 
 	database, subName, err := getDBSubscriptionName(d, db.client)
