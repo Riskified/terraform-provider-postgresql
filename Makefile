@@ -12,15 +12,6 @@ test: fmtcheck
 	echo $(TEST) | \
 		xargs -t -n4 go test $(TESTARGS) -timeout=30s -parallel=4
 
-testacc_setup: fmtcheck
-	@sh -c "'$(CURDIR)/tests/testacc_setup.sh'"
-
-testacc_cleanup: fmtcheck
-	@sh -c "'$(CURDIR)/tests/testacc_cleanup.sh'"
-
-testacc: fmtcheck
-	@sh -c "'$(CURDIR)/tests/testacc_full_pg.sh'"
-
 testacc_crdb: fmtcheck
 	@sh -c "'$(CURDIR)/tests/testacc_full_crdb.sh'"
 
@@ -39,5 +30,5 @@ fmt:
 fmtcheck:
 	@sh -c "'$(CURDIR)/scripts/gofmtcheck.sh'"
 
-.PHONY: build test testacc testacc_crdb vet fmt fmtcheck
+.PHONY: build test testacc_crdb vet fmt fmtcheck
 

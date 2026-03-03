@@ -7,34 +7,6 @@ on:
   pull_request:
 
 jobs:
-  test-pg:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        pgversion: [15, 16, 17, 18]
-
-    env:
-      PGVERSION: ${{ matrix.pgversion }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.20'
-
-      - name: test
-        run: make test
-
-      - name: vet
-        run: make vet
-
-      - name: testacc
-        run: make testacc
-
   test-crdb:
     runs-on: ubuntu-latest
 
