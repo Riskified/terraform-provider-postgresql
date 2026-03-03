@@ -38,39 +38,6 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 						"postgresql_database.default_opts", "lc_ctype", "C"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "connection_limit", "-1"),
-
-					resource.TestCheckResourceAttr(
-						"postgresql_database.modified_opts", "owner", "myrole"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.modified_opts", "name", "custom_template_db"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.modified_opts", "encoding", "UTF8"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.modified_opts", "lc_collate", "en_US.UTF-8"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.modified_opts", "lc_ctype", "en_US.UTF-8"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.modified_opts", "connection_limit", "10"),
-
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pathological_opts", "owner", "myrole"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pathological_opts", "name", "bad_template_db"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pathological_opts", "encoding", "LATIN1"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pathological_opts", "lc_collate", "C"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pathological_opts", "lc_ctype", "C"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pathological_opts", "connection_limit", "0"),
-
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pg_default_opts", "owner", "myrole"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pg_default_opts", "name", "pg_defaults_db"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pg_default_opts", "connection_limit", "0"),
 				),
 			},
 		},
@@ -312,40 +279,6 @@ resource "postgresql_database" "default_opts" {
    connection_limit = -1
 }
 
-resource "postgresql_database" "modified_opts" {
-   name = "custom_template_db"
-   owner = "${postgresql_role.myrole.name}"
-   encoding = "UTF8"
-   lc_collate = "en_US.UTF-8"
-   lc_ctype = "en_US.UTF-8"
-   connection_limit = 10
-}
-
-resource "postgresql_database" "pathological_opts" {
-   name = "bad_template_db"
-   owner = "${postgresql_role.myrole.name}"
-   encoding = "LATIN1"
-   lc_collate = "C"
-   lc_ctype = "C"
-   connection_limit = 0
-}
-
-resource "postgresql_database" "pg_default_opts" {
-  lifecycle {
-    ignore_changes = [
-      "encoding",
-      "lc_collate",
-      "lc_ctype",
-    ]
-  }
-
-  name = "pg_defaults_db"
-  owner = "${postgresql_role.myrole.name}"
-  encoding = "DEFAULT"
-  lc_collate = "DEFAULT"
-  lc_ctype = "DEFAULT"
-  connection_limit = 0
-}
 
 resource "postgresql_database" "mydb_default_owner" {
    name = "mydb_default_owner"

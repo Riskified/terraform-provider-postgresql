@@ -164,19 +164,6 @@ func (c *Config) NewClient(database string) *Client {
 	}
 }
 
-// featureSupported returns true if a given feature is supported or not.  This
-// is slightly different from Client's featureSupported in that here we're
-// evaluating against the expected version, not the fingerprinted version.
-func (c *Config) featureSupported(name featureName) bool {
-	fn, found := featureSupportedCockroachdb[name]
-	if !found {
-		// panic'ing because this is a provider-only bug
-		panic(fmt.Sprintf("unknown feature flag %v", name))
-	}
-
-	return fn(c.ExpectedVersion)
-}
-
 func (c *Config) connParams() []string {
 	params := map[string]string{}
 

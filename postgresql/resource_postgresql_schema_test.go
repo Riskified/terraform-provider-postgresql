@@ -304,6 +304,14 @@ func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 		// Schema ID format is "database.schemaname"
 		parts := strings.Split(rs.Primary.ID, ".")
 		schemaName := parts[len(parts)-1]
+
+		// The public schema is never dropped (intentionally skipped in delete),
+		// so it will always exist — skip the check for it.
+		if schemaName == "public" {
+			_ = txn.Rollback()
+			continue
+		}
+
 		exists, err := checkSchemaExists(txn, schemaName)
 
 		if err != nil {

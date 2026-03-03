@@ -209,14 +209,6 @@ func setToPgIdentList(schema string, idents *schema.Set) string {
 	return strings.Join(quotedIdents, ",")
 }
 
-func setToPgIdentListWithoutSchema(idents *schema.Set) string {
-	quotedIdents := make([]string, idents.Len())
-	for i, ident := range idents.List() {
-		quotedIdents[i] = pq.QuoteIdentifier(ident.(string))
-	}
-	return strings.Join(quotedIdents, ",")
-}
-
 func setToPgIdentSimpleList(idents *schema.Set) string {
 	quotedIdents := make([]string, idents.Len())
 	for i, ident := range idents.List() {
@@ -305,18 +297,6 @@ func schemaExistsWithDB(db *DBConnection, schemaname string) (bool, error) {
 	return true, nil
 }
 
-func getCurrentUser(db QueryAble) (string, error) {
-	var currentUser string
-	err := db.QueryRow("SELECT CURRENT_USER").Scan(&currentUser)
-	switch {
-	case err == sql.ErrNoRows:
-		return "", fmt.Errorf("SELECT CURRENT_USER returns now row, this is quite disturbing")
-	case err != nil:
-		return "", fmt.Errorf("error while looking for the current user: %w", err)
-	}
-	return currentUser, nil
-}
-
 // deferredRollback can be used to rollback a transaction in a defer.
 // It will log an error if it fails
 func deferredRollback(txn *sql.Tx) {
@@ -338,127 +318,11 @@ func getDatabase(d *schema.ResourceData, databaseName string) string {
 	return databaseName
 }
 
-func getDatabaseOwner(db QueryAble, database string) (string, error) {
-	dbQueryString := "$1"
-	dbQueryValues := []interface{}{database}
-
-	// Empty means current DB
-	if database == "" {
-		dbQueryString = "current_database()"
-		dbQueryValues = []interface{}{}
-
-	}
-	query := fmt.Sprintf(`
-SELECT rolname
-  FROM pg_database
-  JOIN pg_roles ON datdba = pg_roles.oid
-  WHERE datname = %s
-`, dbQueryString)
-	var owner string
-
-	err := db.QueryRow(query, dbQueryValues...).Scan(&owner)
-	switch {
-	case err == sql.ErrNoRows:
-		return "", fmt.Errorf("could not find database '%s' while looking for owner", database)
-	case err != nil:
-		return "", fmt.Errorf("error while looking for the owner of database '%s': %w", database, err)
-	}
-	return owner, nil
-}
-
-func getSchemaOwner(db QueryAble, schemaName string) (string, error) {
-	query := `
-SELECT rolname
-  FROM pg_namespace
-  JOIN pg_roles ON nspowner = pg_roles.oid
-  WHERE nspname = $1
-`
-	var owner string
-
-	err := db.QueryRow(query, schemaName).Scan(&owner)
-	switch {
-	case err == sql.ErrNoRows:
-		return "", fmt.Errorf("could not find schema '%s' while looking for owner", schemaName)
-	case err != nil:
-		return "", fmt.Errorf("error while looking for the owner of schema '%s': %w", schemaName, err)
-	}
-	return owner, nil
-}
-
-// getTablesOwner retrieves all the owners for all the tables in the specified schema.
-func getTablesOwner(db QueryAble, schemaName string) ([]string, error) {
-	rows, err := db.Query(
-		"SELECT DISTINCT tableowner FROM pg_tables WHERE schemaname = $1",
-		schemaName,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error while looking for owners of tables in schema '%s': %w", schemaName, err)
-	}
-
-	var owners []string
-	for rows.Next() {
-		var owner string
-		if err := rows.Scan(&owner); err != nil {
-			return nil, fmt.Errorf("could not scan tables owner: %w", err)
-		}
-		owners = append(owners, owner)
-	}
-
-	return owners, nil
-}
-
-func resolveOwners(db QueryAble, owners []string) ([]string, error) {
-	return owners, nil
-}
-
 const publicRole = "public"
-
-func getRoleOID(db QueryAble, role string) (uint32, error) {
-	if role == publicRole {
-		return 0, nil
-	}
-
-	var oid uint32
-	if err := db.QueryRow("SELECT oid FROM pg_roles WHERE rolname = $1", role).Scan(&oid); err != nil {
-		return 0, fmt.Errorf("could not find oid for role %s: %w", role, err)
-	}
-	return oid, nil
-}
 
 // pgLockRole is a no-op for CockroachDB (advisory locks not supported).
 func pgLockRole(txn *sql.Tx, db *DBConnection, role string) error {
 	return nil
-}
-
-// pgLockDatabase is a no-op for CockroachDB (advisory locks not supported).
-func pgLockDatabase(txn *sql.Tx, db *DBConnection, database string) error {
-	return nil
-}
-
-func arrayDifference(a, b []interface{}) (diff []interface{}) {
-	m := make(map[interface{}]bool)
-
-	for _, item := range b {
-		m[item] = true
-	}
-
-	for _, item := range a {
-		if _, ok := m[item]; !ok {
-			diff = append(diff, item)
-		}
-	}
-	return
-}
-
-func isUniqueArr(arr []interface{}) (interface{}, bool) {
-	keys := make(map[interface{}]bool, len(arr))
-	for _, entry := range arr {
-		if _, value := keys[entry]; value {
-			return entry, false
-		}
-		keys[entry] = true
-	}
-	return nil, true
 }
 
 func findStringSubmatchMap(expression string, text string) map[string]string {
