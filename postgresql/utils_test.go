@@ -418,4 +418,3 @@ func testCheckSchemasPrivileges(t *testing.T, dbName, roleName string, schemas [
 	}
 	return nil
 }
-

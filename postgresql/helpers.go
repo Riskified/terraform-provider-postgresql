@@ -122,8 +122,6 @@ func revokeRoleMembership(db QueryAble, role, member string) (bool, error) {
 	return true, nil
 }
 
-
-
 func sliceContainsStr(haystack []string, needle string) bool {
 	for _, s := range haystack {
 		if s == needle {

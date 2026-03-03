@@ -362,4 +362,3 @@ func setDBConnLimit(db QueryAble, d *schema.ResourceData) error {
 
 	return nil
 }
-
