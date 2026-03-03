@@ -6,24 +6,11 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
-// testCheckSchemaCount returns a check function that expects pgCount schemas on PostgreSQL
-// and crdbCount schemas on CockroachDB.
-func testCheckSchemaCount(resourceName string, pgCount, crdbCount int) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		client := testAccProvider.Meta().(*Client)
-		db, err := client.Connect()
-		if err != nil {
-			return fmt.Errorf("could not connect to database: %v", err)
-		}
-		count := pgCount
-		if db.dbType == dbTypeCockroachdb {
-			count = crdbCount
-		}
-		return resource.TestCheckResourceAttr(resourceName, "schemas.#", strconv.Itoa(count))(s)
-	}
+// testCheckSchemaCount returns a check function that expects the given count of schemas.
+func testCheckSchemaCount(resourceName string, count int) resource.TestCheckFunc {
+	return resource.TestCheckResourceAttr(resourceName, "schemas.#", strconv.Itoa(count))
 }
 
 func TestAccPostgresqlDataSourceSchemas(t *testing.T) {
@@ -72,14 +59,14 @@ func TestAccPostgresqlDataSourceSchemas(t *testing.T) {
 					resource.TestCheckTypeSetElemAttr("data.postgresql_schemas.regex_test_schema", "schemas.*", "test_schema"),
 					resource.TestCheckTypeSetElemAttr("data.postgresql_schemas.regex_test_schema", "schemas.*", "test_schema1"),
 					resource.TestCheckTypeSetElemAttr("data.postgresql_schemas.regex_test_schema", "schemas.*", "test_schema2"),
-					testCheckSchemaCount("data.postgresql_schemas.system_true_not_like_pg", 9, 10),
+					testCheckSchemaCount("data.postgresql_schemas.system_true_not_like_pg", 10),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_like_pg_regex_pg_catalog", "schemas.#", "1"),
 					resource.TestCheckTypeSetElemAttr("data.postgresql_schemas.system_true_like_pg_regex_pg_catalog", "schemas.*", "pg_catalog"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_test_not_like_test_schema_regex_test_schema", "schemas.#", "2"),
 					resource.TestCheckTypeSetElemAttr("data.postgresql_schemas.system_false_like_test_not_like_test_schema_regex_test_schema", "schemas.*", "test_schema"),
 					resource.TestCheckTypeSetElemAttr("data.postgresql_schemas.system_false_like_test_not_like_test_schema_regex_test_schema", "schemas.*", "test_schema2"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_likeany_multi", "schemas.#", "2"),
-					testCheckSchemaCount("data.postgresql_schemas.system_true_not_like_multi", 6, 7),
+					testCheckSchemaCount("data.postgresql_schemas.system_true_not_like_multi", 7),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_likeall_multi_not_like_multi", "schemas.#", "1"),
 					resource.TestCheckTypeSetElemAttr("data.postgresql_schemas.system_true_likeall_multi_not_like_multi", "schemas.*", "test_schema1"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_likeany_multi_not_like_multi", "schemas.#", "3"),

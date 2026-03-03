@@ -85,7 +85,7 @@ resource "postgresql_crdb_external_connection" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotCockroachDB(t)
+			// CockroachDB-only provider
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckCockroachDBExternalConnectionDestroy,
@@ -127,7 +127,7 @@ resource "postgresql_crdb_external_connection" "conn2" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotCockroachDB(t)
+			// CockroachDB-only provider
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckCockroachDBExternalConnectionDestroy,

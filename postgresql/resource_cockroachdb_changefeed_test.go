@@ -339,7 +339,7 @@ resource "postgresql_crdb_changefeed" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotCockroachDB(t)
+			// CockroachDB-only provider
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckCockroachDBChangefeedDestroy,
@@ -401,7 +401,7 @@ resource "postgresql_crdb_changefeed" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotCockroachDB(t)
+			// CockroachDB-only provider
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckCockroachDBChangefeedDestroy,
@@ -460,7 +460,7 @@ resource "postgresql_crdb_changefeed" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotCockroachDB(t)
+			// CockroachDB-only provider
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckCockroachDBChangefeedDestroy,

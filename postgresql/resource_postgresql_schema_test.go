@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -56,9 +57,8 @@ func TestAccPostgresqlSchema_AddPolicy(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			// TODO: Need to check if remooving policy is buggy
+			// TODO: Need to check if removing policy is buggy
 			// because non-superuser fails to drop a role
-			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
@@ -301,7 +301,10 @@ func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 		}
 		defer deferredRollback(txn)
 
-		exists, err := checkSchemaExists(txn, getExtensionNameFromID(rs.Primary.ID))
+		// Schema ID format is "database.schemaname"
+		parts := strings.Split(rs.Primary.ID, ".")
+		schemaName := parts[len(parts)-1]
+		exists, err := checkSchemaExists(txn, schemaName)
 
 		if err != nil {
 			return fmt.Errorf("Error checking schema %s", err)

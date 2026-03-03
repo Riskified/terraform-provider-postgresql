@@ -122,107 +122,7 @@ func revokeRoleMembership(db QueryAble, role, member string) (bool, error) {
 	return true, nil
 }
 
-// withRolesGranted temporarily grants, if needed, the roles specified to connected user
-// (i.e.: the admin configure in the provider) and revoke them as soon as the
-// callback func has finished.
-func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
-	// No roles asked, execute the function directly
-	if len(roles) == 0 {
-		return fn()
-	}
 
-	currentUser, err := getCurrentUser(txn)
-	if err != nil {
-		return err
-	}
-
-	superuser, err := isSuperuser(txn, currentUser)
-	if err != nil {
-		return err
-	}
-	if superuser {
-		log.Printf("withRolesGranted: current user %s is superuser, no need to grant roles", currentUser)
-		return fn()
-	}
-
-	var grantedRoles []string
-	var revokedRoles []string
-
-	for _, role := range roles {
-		// We need to check if the role we want to grant is a superuser
-		// in this case Postgres disallows to grant it to a current user which is not superuser.
-		superuser, err := isSuperuser(txn, role)
-		if err != nil {
-			return err
-		}
-		if superuser {
-			log.Printf("withRolesGranted: WARN role %s could not be granted to current user (%s) as it's a superuser", role, currentUser)
-			continue
-		}
-
-		// We also need to check if the reverse relationship does not exist.
-		// e.g.: We want to temporary `GRANT foo TO postgres` so `postgres` become a member of role `foo`
-		// in order to manipulate its objects/privileges.
-		// But PostgreSQL prevents `foo` to be a member of the role `postgres`,
-		// and for `postgres` to be a member of the role `foo`, at the same time.
-		// In this case we will temporary revoke this privilege.
-		// So, the following queries will happen (in the same transaction):
-		//  - REVOKE postgres FROM foo
-		//  - GRANT foo TO postgres
-		//
-		//     Here we execute the wrapped function `fn`
-		//
-		//  - REVOKE foo FROM postgres
-		//  - GRANT postgres TO foo
-
-		// Check the opposite relation and revoke currentUser from role if needed
-		revoked, err := revokeRoleMembership(txn, currentUser, role)
-		if err != nil {
-			return err
-		}
-		if revoked {
-			revokedRoles = append(revokedRoles, role)
-		}
-
-		// Grant the role to currentUser if needed
-		roleGranted, err := grantRoleMembership(txn, role, currentUser)
-		if err != nil {
-			return err
-		}
-		if roleGranted {
-			grantedRoles = append(grantedRoles, role)
-		}
-	}
-
-	// Execute the wrapped function
-	if err := fn(); err != nil {
-		return err
-	}
-
-	// Revoke the temporary granted roles.
-	for _, role := range grantedRoles {
-		if _, err := revokeRoleMembership(txn, role, currentUser); err != nil {
-			return err
-		}
-	}
-
-	// Grant back the temporary revoked role.
-	for _, role := range revokedRoles {
-		// check if the role has not been deleted by the wrapped function
-		exists, err := roleExists(txn, role)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			continue
-		}
-		if _, err := grantRoleMembership(txn, currentUser, role); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
 
 func sliceContainsStr(haystack []string, needle string) bool {
 	for _, s := range haystack {
@@ -233,21 +133,17 @@ func sliceContainsStr(haystack []string, needle string) bool {
 	return false
 }
 
-// allowedPrivileges is the list of privileges allowed per object types in Postgres.
-// see: https://www.postgresql.org/docs/current/sql-grant.html
+// allowedPrivileges is the list of privileges allowed per object types in CockroachDB.
 var allowedPrivileges = map[string][]string{
-	"system":               {"ALL", "BACKUP", "CANCELQUERY", "CONTROLJOB", "CREATEDB", "CREATELOGIN", "CREATEROLE", "EXTERNALCONNECTION", "EXTERNALIOIMPLICITACCESS", "MODIFYCLUSTERSETTING", "MODIFYSQLCLUSTERSETTING", "NOSQLLOGIN", "REPLICATION", "RESTORE", "VIEWACTIVITY", "VIEWACTIVITYREDACTED", "VIEWCLUSTERMETADATA", "VIEWCLUSTERSETTING", "VIEWDEBUG", "VIEWJOB", "VIEWSYSTEMTABLE"},
-	"database":             {"ALL", "CREATE", "CONNECT", "TEMPORARY", "BACKUP", "RESTORE", "ZONECONFIG"},
-	"table":                {"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "DROP", "CHANGEFEED", "RESTORE", "ZONECONFIG"},
-	"sequence":             {"ALL", "USAGE", "SELECT", "UPDATE", "CREATE", "DELETE", "INSERT", "ZONECONFIG"},
-	"schema":               {"ALL", "CREATE", "USAGE"},
-	"function":             {"ALL", "EXECUTE"},
-	"procedure":            {"ALL", "EXECUTE"},
-	"routine":              {"ALL", "EXECUTE"},
-	"type":                 {"ALL", "USAGE"},
-	"foreign_data_wrapper": {"ALL", "USAGE"},
-	"foreign_server":       {"ALL", "USAGE"},
-	"column":               {"ALL", "SELECT", "INSERT", "UPDATE", "REFERENCES"},
+	"system":    {"ALL", "BACKUP", "CANCELQUERY", "CONTROLJOB", "CREATEDB", "CREATELOGIN", "CREATEROLE", "EXTERNALCONNECTION", "EXTERNALIOIMPLICITACCESS", "MODIFYCLUSTERSETTING", "MODIFYSQLCLUSTERSETTING", "NOSQLLOGIN", "REPLICATION", "RESTORE", "VIEWACTIVITY", "VIEWACTIVITYREDACTED", "VIEWCLUSTERMETADATA", "VIEWCLUSTERSETTING", "VIEWDEBUG", "VIEWJOB", "VIEWSYSTEMTABLE"},
+	"database":  {"ALL", "CREATE", "CONNECT", "TEMPORARY", "BACKUP", "RESTORE", "ZONECONFIG"},
+	"table":     {"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "DROP", "CHANGEFEED", "RESTORE", "ZONECONFIG"},
+	"sequence":  {"ALL", "USAGE", "SELECT", "UPDATE", "CREATE", "DELETE", "INSERT", "ZONECONFIG"},
+	"schema":    {"ALL", "CREATE", "USAGE"},
+	"function":  {"ALL", "EXECUTE"},
+	"procedure": {"ALL", "EXECUTE"},
+	"routine":   {"ALL", "EXECUTE"},
+	"type":      {"ALL", "USAGE"},
 }
 
 // validatePrivileges checks that privileges to apply are allowed for this object type.
@@ -437,7 +333,7 @@ func deferredRollback(txn *sql.Tx) {
 }
 
 func getDatabase(d *schema.ResourceData, databaseName string) string {
-	if v, ok := d.GetOk(extDatabaseAttr); ok {
+	if v, ok := d.GetOk("database"); ok {
 		databaseName = v.(string)
 	}
 
@@ -514,29 +410,7 @@ func getTablesOwner(db QueryAble, schemaName string) ([]string, error) {
 }
 
 func resolveOwners(db QueryAble, owners []string) ([]string, error) {
-	resolvedOwners := []string{}
-	for _, owner := range owners {
-		if owner == "pg_database_owner" {
-			var err error
-			owner, err = getDatabaseOwner(db, "")
-			if err != nil {
-				return nil, err
-			}
-		}
-		resolvedOwners = append(resolvedOwners, owner)
-	}
-
-	return resolvedOwners, nil
-}
-
-func isSuperuser(db QueryAble, role string) (bool, error) {
-	var superuser bool
-
-	if err := db.QueryRow("SELECT rolsuper FROM pg_roles WHERE rolname = $1", role).Scan(&superuser); err != nil {
-		return false, fmt.Errorf("could not check if role %s is superuser: %w", role, err)
-	}
-
-	return superuser, nil
+	return owners, nil
 }
 
 const publicRole = "public"
@@ -553,38 +427,13 @@ func getRoleOID(db QueryAble, role string) (uint32, error) {
 	return oid, nil
 }
 
-// Lock a role and all his members to avoid concurrent updates on some resources
+// pgLockRole is a no-op for CockroachDB (advisory locks not supported).
 func pgLockRole(txn *sql.Tx, db *DBConnection, role string) error {
-	if db.featureSupported(featureAdvisoryXactLock) {
-		// Disable statement timeout for this connection otherwise the lock could fail
-		if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
-			return fmt.Errorf("could not disable statement_timeout: %w", err)
-		}
-		if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_roles WHERE rolname = $1", role); err != nil {
-			return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
-		}
-
-		if _, err := txn.Exec(
-			"SELECT pg_advisory_xact_lock(member::bigint) FROM pg_auth_members JOIN pg_roles ON roleid = pg_roles.oid WHERE rolname = $1",
-			role,
-		); err != nil {
-			return fmt.Errorf("could not get advisory lock for members of role %s: %w", role, err)
-		}
-	}
 	return nil
 }
 
-// Lock a database and all his members to avoid concurrent updates on some resources
+// pgLockDatabase is a no-op for CockroachDB (advisory locks not supported).
 func pgLockDatabase(txn *sql.Tx, db *DBConnection, database string) error {
-	if db.featureSupported(featureAdvisoryXactLock) {
-		// Disable statement timeout for this connection otherwise the lock could fail
-		if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
-			return fmt.Errorf("could not disable statement_timeout: %w", err)
-		}
-		if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_database WHERE datname = $1", database); err != nil {
-			return fmt.Errorf("could not get advisory lock for database %s: %w", database, err)
-		}
-	}
 	return nil
 }
 

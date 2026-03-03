@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -15,7 +14,6 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotPostgres(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
@@ -33,26 +31,18 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "name", "default_opts_name"),
 					resource.TestCheckResourceAttr(
-						"postgresql_database.default_opts", "template", "template0"),
-					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "encoding", "UTF8"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "lc_collate", "C"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "lc_ctype", "C"),
 					resource.TestCheckResourceAttr(
-						"postgresql_database.default_opts", "tablespace_name", "pg_default"),
-					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "connection_limit", "-1"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.default_opts", "is_template", "false"),
 
 					resource.TestCheckResourceAttr(
 						"postgresql_database.modified_opts", "owner", "myrole"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.modified_opts", "name", "custom_template_db"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.modified_opts", "template", "template0"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.modified_opts", "encoding", "UTF8"),
 					resource.TestCheckResourceAttr(
@@ -60,18 +50,12 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"postgresql_database.modified_opts", "lc_ctype", "en_US.UTF-8"),
 					resource.TestCheckResourceAttr(
-						"postgresql_database.modified_opts", "tablespace_name", "pg_default"),
-					resource.TestCheckResourceAttr(
 						"postgresql_database.modified_opts", "connection_limit", "10"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.modified_opts", "is_template", "true"),
 
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pathological_opts", "owner", "myrole"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pathological_opts", "name", "bad_template_db"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pathological_opts", "template", "template0"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pathological_opts", "encoding", "LATIN1"),
 					resource.TestCheckResourceAttr(
@@ -79,30 +63,14 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pathological_opts", "lc_ctype", "C"),
 					resource.TestCheckResourceAttr(
-						"postgresql_database.pathological_opts", "tablespace_name", "pg_default"),
-					resource.TestCheckResourceAttr(
 						"postgresql_database.pathological_opts", "connection_limit", "0"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pathological_opts", "is_template", "true"),
 
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pg_default_opts", "owner", "myrole"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pg_default_opts", "name", "pg_defaults_db"),
 					resource.TestCheckResourceAttr(
-						"postgresql_database.pg_default_opts", "template", "DEFAULT"),
-					// resource.TestCheckResourceAttr(
-					// 	"postgresql_database.pg_default_opts", "encoding", "DEFAULT"),
-					// resource.TestCheckResourceAttr(
-					// 	"postgresql_database.pg_default_opts", "lc_collate", "DEFAULT"),
-					// resource.TestCheckResourceAttr(
-					//  "postgresql_database.pg_default_opts", "lc_ctype", "DEFAULT"),
-					// resource.TestCheckResourceAttr(
-					// 	"postgresql_database.pg_default_opts", "tablespace_name", "DEFAULT"),
-					resource.TestCheckResourceAttr(
 						"postgresql_database.pg_default_opts", "connection_limit", "0"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pg_default_opts", "is_template", "true"),
 				),
 			},
 		},
@@ -113,7 +81,6 @@ func TestAccPostgresqlDatabase_DefaultOwner(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotPostgres(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
@@ -126,68 +93,6 @@ func TestAccPostgresqlDatabase_DefaultOwner(t *testing.T) {
 						"postgresql_database.mydb_default_owner", "name", "mydb_default_owner"),
 					resource.TestCheckResourceAttrSet(
 						"postgresql_database.mydb_default_owner", "owner"),
-				),
-			},
-		},
-	})
-}
-
-func TestAccPostgresqlDatabase_Update(t *testing.T) {
-
-	// Version dependent features values will be set in PreCheck
-	// because we need to access database to check Postgres version.
-
-	// Allow connection depends of Postgres version (needs pg >= 9.5)
-	var allowConnections bool
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			skipIfNotPostgres(t)
-
-			client := testAccProvider.Meta().(*Client)
-			db, err := client.Connect()
-			if err != nil {
-				t.Fatalf("could not connect to database: %v", err)
-			}
-			allowConnections = db.featureSupported(featureDBAllowConnections)
-
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
-		Steps: []resource.TestStep{
-			{
-				Config: fmt.Sprintf(`
-resource postgresql_database test_db {
-    name = "test_db"
-	allow_connections = "%t"
-}
-`, allowConnections),
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
-					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
-					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "-1"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.test_db", "allow_connections",
-						strconv.FormatBool(allowConnections),
-					),
-				),
-			},
-			{
-				Config: `
-resource postgresql_database test_db {
-	name = "test_db"
-	connection_limit = 2
-	allow_connections = false
-}
-	`,
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
-					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
-					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "2"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.test_db", "allow_connections", "false",
-					),
 				),
 			},
 		},
@@ -214,7 +119,6 @@ resource postgresql_database "test_db" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotPostgres(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
@@ -259,7 +163,6 @@ resource postgresql_database "test_db" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotPostgres(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
@@ -403,56 +306,45 @@ resource "postgresql_database" "mydb2" {
 resource "postgresql_database" "default_opts" {
    name = "default_opts_name"
    owner = "${postgresql_role.myrole.name}"
-   template = "template0"
    encoding = "UTF8"
    lc_collate = "C"
    lc_ctype = "C"
    connection_limit = -1
-   is_template = false
 }
 
 resource "postgresql_database" "modified_opts" {
    name = "custom_template_db"
    owner = "${postgresql_role.myrole.name}"
-   template = "template0"
    encoding = "UTF8"
    lc_collate = "en_US.UTF-8"
    lc_ctype = "en_US.UTF-8"
    connection_limit = 10
-   is_template = true
 }
 
 resource "postgresql_database" "pathological_opts" {
    name = "bad_template_db"
    owner = "${postgresql_role.myrole.name}"
-   template = "template0"
    encoding = "LATIN1"
    lc_collate = "C"
    lc_ctype = "C"
    connection_limit = 0
-   is_template = true
 }
 
 resource "postgresql_database" "pg_default_opts" {
   lifecycle {
     ignore_changes = [
-      "template",
       "encoding",
       "lc_collate",
       "lc_ctype",
-      "tablespace_name",
     ]
   }
 
   name = "pg_defaults_db"
   owner = "${postgresql_role.myrole.name}"
-  template = "DEFAULT"
   encoding = "DEFAULT"
   lc_collate = "DEFAULT"
   lc_ctype = "DEFAULT"
-  tablespace_name = "DEFAULT"
   connection_limit = 0
-  is_template = true
 }
 
 resource "postgresql_database" "mydb_default_owner" {

@@ -18,7 +18,6 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
-			testCheckCompatibleVersion(t, featureRoleroleInherit)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
@@ -33,14 +32,9 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 
 					testAccCheckPostgresqlRoleExists("role_default", nil, nil),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "name", "role_default"),
-					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "superuser", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "create_database", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "create_role", "false"),
-					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "inherit", "false"),
-					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "replication", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "bypass_row_level_security", "false"),
-					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "connection_limit", "-1"),
-					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "encrypted_password", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "password", ""),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "valid_until", "infinity"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "skip_drop_role", "false"),
@@ -59,39 +53,6 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.1", "role_simple"),
 
 					testAccCheckPostgresqlRoleExists("role_with_search_path", nil, []string{"bar", "foo-with-hyphen"}),
-				),
-			},
-		},
-	})
-}
-
-// Test creating a superuser role.
-func TestAccPostgresqlRole_Superuser(t *testing.T) {
-
-	roleConfig := `
-resource "postgresql_role" "role_with_superuser" {
-  name = "role_with_superuser"
-  superuser = true
-  login = true
-  password = "mypass"
-}`
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featurePrivileges)
-			testCheckCompatibleVersion(t, fetureRoleSuperuser)
-			// Need to a be a superuser to create a superuser
-			testSuperuserPreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
-		Steps: []resource.TestStep{
-			{
-				Config: roleConfig,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_role.role_with_superuser", "name", "role_with_superuser"),
-					resource.TestCheckResourceAttr("postgresql_role.role_with_superuser", "superuser", "true"),
 				),
 			},
 		},
@@ -117,7 +78,6 @@ resource "postgresql_role" "group_role" {
 resource "postgresql_role" "update_role" {
   name = "update_role2"
   login = true
-  connection_limit = 5
   password = "titi"
   roles = ["${postgresql_role.group_role.name}"]
   search_path = ["mysearchpath"]
@@ -141,7 +101,6 @@ resource "postgresql_role" "update_role" {
 					testAccCheckPostgresqlRoleExists("update_role", []string{}, nil),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
-					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "toto"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "valid_until", "2099-05-04 12:00:00+00"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "roles.#", "0"),
@@ -159,7 +118,6 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr(
 						"postgresql_role.update_role", "name", "update_role2",
 					),
-					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "5"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "titi"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "valid_until", "infinity"),
@@ -181,7 +139,6 @@ resource "postgresql_role" "update_role" {
 					testAccCheckPostgresqlRoleExists("update_role", []string{}, nil),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
-					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "toto"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "roles.#", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.#", "0"),
@@ -216,17 +173,15 @@ func TestAccPostgresqlRole_AdminGranted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not connect to database: %v", err)
 	}
-	if db.dbType == dbTypeCockroachdb {
-		helperRole := "test_admin_grant_helper"
-		if _, err := db.Exec(fmt.Sprintf(`CREATE ROLE "%s"`, helperRole)); err != nil {
-			t.Fatalf("could not create helper role: %v", err)
-		}
-		defer func() { _, _ = db.Exec(fmt.Sprintf(`DROP ROLE IF EXISTS "%s"`, helperRole)) }()
-		if _, err := db.Exec(fmt.Sprintf(`GRANT "%s" TO "%s" WITH ADMIN OPTION`, helperRole, admin)); err != nil {
-			t.Fatalf("could not grant admin option on helper role: %v", err)
-		}
-		admin = helperRole
+	helperRole := "test_admin_grant_helper"
+	if _, err := db.Exec(fmt.Sprintf(`CREATE ROLE "%s"`, helperRole)); err != nil {
+		t.Fatalf("could not create helper role: %v", err)
 	}
+	defer func() { _, _ = db.Exec(fmt.Sprintf(`DROP ROLE IF EXISTS "%s"`, helperRole)) }()
+	if _, err := db.Exec(fmt.Sprintf(`GRANT "%s" TO "%s" WITH ADMIN OPTION`, helperRole, admin)); err != nil {
+		t.Fatalf("could not grant admin option on helper role: %v", err)
+	}
+	admin = helperRole
 
 	roleConfig := fmt.Sprintf(`
 resource "postgresql_role" "test_role" {
@@ -417,28 +372,16 @@ resource "postgresql_role" "role_with_pwd" {
   password = "mypass"
 }
 
-resource "postgresql_role" "role_with_pwd_encr" {
-  name = "role_with_pwd_encr"
-  login = true
-  password = "mypass"
-  encrypted_password = true
-}
-
 resource "postgresql_role" "role_simple" {
   name = "role_simple"
 }
 
 resource "postgresql_role" "role_with_defaults" {
   name = "role_default"
-  superuser = false
   create_database = false
   create_role = false
-  inherit = false
   login = false
-  replication = false
   bypass_row_level_security = false
-  connection_limit = -1
-  encrypted_password = true
   password = ""
   skip_drop_role = false
   valid_until = "infinity"

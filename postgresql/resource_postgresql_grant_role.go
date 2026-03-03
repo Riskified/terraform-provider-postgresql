@@ -1,29 +1,12 @@
 package postgresql
 
 import (
-	"database/sql"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/lib/pq"
-)
-
-const (
-	// This returns the role membership for role, grant_role
-	getGrantRoleQuery = `
-SELECT
-  pg_get_userbyid(member) as role,
-  pg_get_userbyid(roleid) as grant_role,
-  admin_option
-FROM
-  pg_auth_members
-WHERE
-  pg_get_userbyid(member) = $1 AND
-  pg_get_userbyid(roleid) = $2;
-`
 )
 
 func resourcePostgreSQLGrantRole() *schema.Resource {
@@ -75,35 +58,13 @@ func resourcePostgreSQLGrantRoleCreate(db *DBConnection, d *schema.ResourceData)
 		)
 	}
 
-	// CockroachDB does not support role grants within explicit transactions
-	if db.dbType == dbTypeCockroachdb {
-		// Revoke the granted roles before granting them again.
-		if err := revokeRoleWithDB(db, d); err != nil {
-			return err
-		}
+	// Revoke the granted roles before granting them again.
+	if err := revokeRoleWithDB(db, d); err != nil {
+		return err
+	}
 
-		if err := grantRoleWithDB(db, d); err != nil {
-			return err
-		}
-	} else {
-		txn, err := startTransaction(db.client, "")
-		if err != nil {
-			return err
-		}
-		defer deferredRollback(txn)
-
-		// Revoke the granted roles before granting them again.
-		if err = revokeRole(txn, d); err != nil {
-			return err
-		}
-
-		if err = grantRole(txn, d); err != nil {
-			return err
-		}
-
-		if err = txn.Commit(); err != nil {
-			return fmt.Errorf("could not commit transaction: %w", err)
-		}
+	if err := grantRoleWithDB(db, d); err != nil {
+		return err
 	}
 
 	d.SetId(generateGrantRoleID(d))
@@ -119,25 +80,8 @@ func resourcePostgreSQLGrantRoleDelete(db *DBConnection, d *schema.ResourceData)
 		)
 	}
 
-	// CockroachDB does not support role grants within explicit transactions
-	if db.dbType == dbTypeCockroachdb {
-		if err := revokeRoleWithDB(db, d); err != nil {
-			return err
-		}
-	} else {
-		txn, err := startTransaction(db.client, "")
-		if err != nil {
-			return err
-		}
-		defer deferredRollback(txn)
-
-		if err = revokeRole(txn, d); err != nil {
-			return err
-		}
-
-		if err = txn.Commit(); err != nil {
-			return fmt.Errorf("could not commit transaction: %w", err)
-		}
+	if err := revokeRoleWithDB(db, d); err != nil {
+		return err
 	}
 
 	return nil
@@ -147,38 +91,18 @@ func readGrantRole(db *DBConnection, d *schema.ResourceData) error {
 	var roleName, grantRoleName string
 	var withAdminOption bool
 
-	grantRoleID := d.Id()
-
 	values := []interface{}{
 		&roleName,
 		&grantRoleName,
 		&withAdminOption,
 	}
 
-	var query string
-	if db.dbType == dbTypeCockroachdb {
-		query = fmt.Sprintf(` with a as (show grants on role "%s" for "%s") select member as role , role_name as grant_role, is_admin as with_admin_option from a;
+	query := fmt.Sprintf(` with a as (show grants on role "%s" for "%s") select member as role , role_name as grant_role, is_admin as with_admin_option from a;
 `, d.Get("grant_role"), d.Get("role"))
-		if err := db.QueryRow(query).Scan(values...); err != nil {
-			return fmt.Errorf("Error to show grants on role %s for %s :%w ", d.Get("grant_role"), d.Get("role"), err)
-		}
-	} else {
-		err := db.QueryRow(getGrantRoleQuery, d.Get("role"), d.Get("grant_role")).Scan(values...)
-		switch {
-		case err == sql.ErrNoRows:
-			log.Printf("[WARN] PostgreSQL grant role (%q) not found", grantRoleID)
-			d.SetId("")
-			return nil
-		case err != nil:
-			return fmt.Errorf("Error reading grant role: %w", err)
-		}
-
-		d.Set("role", roleName)
-		d.Set("grant_role", grantRoleName)
-		d.Set("with_admin_option", withAdminOption)
-
-		d.SetId(generateGrantRoleID(d))
+	if err := db.QueryRow(query).Scan(values...); err != nil {
+		return fmt.Errorf("Error to show grants on role %s for %s :%w ", d.Get("grant_role"), d.Get("role"), err)
 	}
+
 	return nil
 }
 
@@ -209,23 +133,7 @@ func createRevokeRoleQuery(d *schema.ResourceData) string {
 	)
 }
 
-func grantRole(txn *sql.Tx, d *schema.ResourceData) error {
-	query := createGrantRoleQuery(d)
-	if _, err := txn.Exec(query); err != nil {
-		return fmt.Errorf("could not execute grant query: %w", err)
-	}
-	return nil
-}
-
-func revokeRole(txn *sql.Tx, d *schema.ResourceData) error {
-	query := createRevokeRoleQuery(d)
-	if _, err := txn.Exec(query); err != nil {
-		return fmt.Errorf("could not execute revoke query: %w", err)
-	}
-	return nil
-}
-
-// grantRoleWithDB grants a role using the DB connection directly (for CockroachDB)
+// grantRoleWithDB grants a role using the DB connection directly
 func grantRoleWithDB(db *DBConnection, d *schema.ResourceData) error {
 	query := createGrantRoleQuery(d)
 	if _, err := db.Exec(query); err != nil {
@@ -234,7 +142,7 @@ func grantRoleWithDB(db *DBConnection, d *schema.ResourceData) error {
 	return nil
 }
 
-// revokeRoleWithDB revokes a role using the DB connection directly (for CockroachDB)
+// revokeRoleWithDB revokes a role using the DB connection directly
 func revokeRoleWithDB(db *DBConnection, d *schema.ResourceData) error {
 	query := createRevokeRoleQuery(d)
 	if _, err := db.Exec(query); err != nil {

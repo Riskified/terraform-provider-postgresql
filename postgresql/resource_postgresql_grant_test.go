@@ -1,7 +1,6 @@
 package postgresql
 
 import (
-	"database/sql"
 	"fmt"
 	"regexp"
 	"strings"
@@ -17,8 +16,6 @@ func TestCreateGrantQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
 	var tableObjects = []interface{}{"o1", "o2"}
-	var tableColumns = []interface{}{"col1", "col2"}
-	var fdwObjects = []interface{}{"baz"}
 
 	cases := []struct {
 		resource   *schema.ResourceData
@@ -118,55 +115,6 @@ func TestCreateGrantQuery(t *testing.T) {
 			privileges: []string{"SELECT"},
 			expected:   fmt.Sprintf(`GRANT SELECT ON TABLE %[1]s."o2",%[1]s."o1" TO %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
-		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
-				"object_type": "column",
-				"objects":     []interface{}{"o1"},
-				"columns":     tableColumns,
-				"schema":      databaseName,
-				"role":        roleName,
-			}),
-			privileges: []string{"SELECT"},
-			expected:   fmt.Sprintf(`GRANT SELECT (%[2]s,%[3]s) ON TABLE %[1]s."o1" TO %[4]s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier("col2"), pq.QuoteIdentifier("col1"), pq.QuoteIdentifier(roleName)),
-		},
-		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
-				"object_type": "foreign_data_wrapper",
-				"objects":     fdwObjects,
-				"role":        roleName,
-			}),
-			privileges: []string{"USAGE"},
-			expected:   fmt.Sprintf(`GRANT USAGE ON FOREIGN DATA WRAPPER "baz" TO %s`, pq.QuoteIdentifier(roleName)),
-		},
-		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
-				"object_type":       "foreign_data_wrapper",
-				"objects":           fdwObjects,
-				"role":              roleName,
-				"with_grant_option": true,
-			}),
-			privileges: []string{"ALL PRIVILEGES"},
-			expected:   fmt.Sprintf(`GRANT ALL PRIVILEGES ON FOREIGN DATA WRAPPER "baz" TO %s WITH GRANT OPTION`, pq.QuoteIdentifier(roleName)),
-		},
-		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
-				"object_type": "foreign_server",
-				"objects":     fdwObjects,
-				"role":        roleName,
-			}),
-			privileges: []string{"USAGE"},
-			expected:   fmt.Sprintf(`GRANT USAGE ON FOREIGN SERVER "baz" TO %s`, pq.QuoteIdentifier(roleName)),
-		},
-		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
-				"object_type":       "foreign_server",
-				"objects":           fdwObjects,
-				"role":              roleName,
-				"with_grant_option": true,
-			}),
-			privileges: []string{"ALL PRIVILEGES"},
-			expected:   fmt.Sprintf(`GRANT ALL PRIVILEGES ON FOREIGN SERVER "baz" TO %s WITH GRANT OPTION`, pq.QuoteIdentifier(roleName)),
-		},
 	}
 
 	for _, c := range cases {
@@ -181,8 +129,6 @@ func TestCreateRevokeQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
 	var tableObjects = []interface{}{"o1", "o2"}
-	var tableColumns = []interface{}{"col1", "col2"}
-	var fdwObjects = []interface{}{"baz"}
 
 	cases := []struct {
 		resource *schema.ResourceData
@@ -262,33 +208,6 @@ func TestCreateRevokeQuery(t *testing.T) {
 				"privileges":  []interface{}{"INSERT", "UPDATE"},
 			}),
 			expected: fmt.Sprintf(`REVOKE UPDATE,INSERT ON TABLE %[1]s."o2",%[1]s."o1" FROM %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
-		},
-		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
-				"object_type": "column",
-				"objects":     []interface{}{"o1"},
-				"schema":      databaseName,
-				"columns":     tableColumns,
-				"role":        roleName,
-				"privileges":  []interface{}{"SELECT"},
-			}),
-			expected: fmt.Sprintf(`REVOKE SELECT ("col2","col1") ON TABLE %[1]s."o1" FROM %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
-		},
-		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
-				"object_type": "foreign_data_wrapper",
-				"objects":     fdwObjects,
-				"role":        roleName,
-			}),
-			expected: fmt.Sprintf(`REVOKE ALL PRIVILEGES ON FOREIGN DATA WRAPPER "baz" FROM %s`, pq.QuoteIdentifier(roleName)),
-		},
-		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
-				"object_type": "foreign_server",
-				"objects":     fdwObjects,
-				"role":        roleName,
-			}),
-			expected: fmt.Sprintf(`REVOKE ALL PRIVILEGES ON FOREIGN SERVER "baz" FROM %s`, pq.QuoteIdentifier(roleName)),
 		},
 	}
 
@@ -376,95 +295,6 @@ func TestAccPostgresqlGrant(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
 					func(*terraform.State) error {
 						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{})
-					},
-				),
-			},
-		},
-	})
-}
-
-func TestAccPostgresqlGrantColumns(t *testing.T) {
-	skipIfNotAcc(t)
-
-	dbSuffix, teardown := setupTestDatabase(t, true, true)
-	defer teardown()
-
-	testTables := []string{"test_schema.test_table"}
-	createTestTables(t, dbSuffix, testTables, "")
-
-	dbName, roleName := getTestDBNames(dbSuffix)
-
-	var testGrant = fmt.Sprintf(`
-	resource "postgresql_grant" "test" {
-		database    = "%s"
-		role        = "%s"
-		schema      = "test_schema"
-		object_type = "column"
-		objects     = ["test_table"]
-		columns     = %%s
-		privileges  = %%s
-	}
-	`, dbName, roleName)
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featurePrivileges)
-			testCheckCompatibleVersion(t, featureColumnPrivileges)
-		},
-		Providers: testAccProviders,
-		Steps: []resource.TestStep{
-			{
-				Config: fmt.Sprintf(testGrant, `["test_column_one", "test_column_two"]`, `["SELECT"]`),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "columns.#", "2"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.0", "SELECT"),
-					func(*terraform.State) error {
-						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"SELECT"}, []string{"test_column_one"})
-					},
-					func(*terraform.State) error {
-						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"SELECT"}, []string{"test_column_one", "test_column_two"})
-					},
-					func(*terraform.State) error {
-						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{""}, []string{"test_column_one", "var"})
-					},
-				),
-			},
-			{
-				Config: fmt.Sprintf(testGrant, `["test_column_one", "test_column_two"]`, `["INSERT"]`),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "columns.#", "2"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "columns.0", "test_column_one"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.0", "INSERT"),
-					func(*terraform.State) error {
-						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"INSERT"}, []string{`"test_column_one"`})
-					},
-					func(*terraform.State) error {
-						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"INSERT"}, []string{`"test_column_one"`, `"test_column_two"`})
-					},
-				),
-			},
-			{
-				Config: fmt.Sprintf(testGrant, `["test_column_one", "test_column_two"]`, `["UPDATE"]`),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "columns.#", "2"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "columns.0", "test_column_one"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.0", "UPDATE"),
-
-					func(*terraform.State) error {
-						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"UPDATE"}, []string{"test_column_one"})
-					},
-					func(*terraform.State) error {
-						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"UPDATE"}, []string{"test_column_one", "test_column_two"})
 					},
 				),
 			},
@@ -597,87 +427,6 @@ func TestAccPostgresqlGrantObjectsError(t *testing.T) {
 					privileges  = ["CONNECT"]
 				}`,
 				ExpectError: regexp.MustCompile("cannot specify `objects` when `object_type` is `database` or `schema`"),
-			},
-			{
-				Config: `resource "postgresql_grant" "test" {
-					database    = "test_db"
-					role        = "test_role"
-					object_type = "foreign_data_wrapper"
-					objects     = ["o1", "o2"]
-					privileges  = ["USAGE"]
-				}`,
-				ExpectError: regexp.MustCompile("one element must be specified in `objects` when `object_type` is `foreign_data_wrapper` or `foreign_server`"),
-			},
-			{
-				Config: `resource "postgresql_grant" "test" {
-					database    = "test_db"
-					role        = "test_role"
-					object_type = "foreign_server"
-					objects     = ["o1", "o2"]
-					privileges  = ["USAGE"]
-				}`,
-				ExpectError: regexp.MustCompile("one element must be specified in `objects` when `object_type` is `foreign_data_wrapper` or `foreign_server`"),
-			},
-		},
-	})
-}
-
-func TestAccPostgresqlGrantColumnsError(t *testing.T) {
-	skipIfNotAcc(t)
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featurePrivileges)
-		},
-		Providers: testAccProviders,
-		Steps: []resource.TestStep{
-			{
-				Config: `resource "postgresql_grant" "test" {
-					database    = "test_db"
-					role        = "test_role"
-					schema      = "test_schema"
-					object_type = "column"
-					objects     = ["o1", "o2"]
-					columns     = ["col1", "col2"]
-					privileges  = ["SELECT"]
-				}`,
-				ExpectError: regexp.MustCompile("must specify exactly 1 table in the `objects` field when `object_type` is `column`"),
-			},
-			{
-				Config: `resource "postgresql_grant" "test" {
-					database    = "test_db"
-					role        = "test_role"
-					schema      = "test_schema"
-					object_type = "column"
-					objects     = ["o1"]
-					columns     = ["col1", "col2"]
-					privileges  = ["SELECT", "INSERT"]
-				}`,
-				ExpectError: regexp.MustCompile("must specify exactly 1 `privileges` when `object_type` is `column`"),
-			},
-			{
-				Config: `resource "postgresql_grant" "test" {
-					database    = "test_db"
-					role        = "test_role"
-					schema      = "test_schema"
-					object_type = "column"
-					objects     = ["o1"]
-					privileges  = ["SELECT"]
-				}`,
-				ExpectError: regexp.MustCompile("must specify `columns` when `object_type` is `column`"),
-			},
-			{
-				Config: `resource "postgresql_grant" "test" {
-					database    = "test_db"
-					role        = "test_role"
-					schema      = "test_schema"
-					object_type = "table"
-					objects     = ["o1"]
-					columns     = ["col1", "col2"]
-					privileges  = ["SELECT"]
-				}`,
-				ExpectError: regexp.MustCompile("cannot specify `columns` when `object_type` is not `column`"),
 			},
 		},
 	})
@@ -1201,219 +950,6 @@ resource "postgresql_grant" "test" {
 	})
 }
 
-func TestAccPostgresqlGrantForeignDataWrapper(t *testing.T) {
-	skipIfNotAcc(t)
-	skipIfNotSuperuser(t)
-	// Configure provider and skip early, before any setup that would fail on CRDB
-	testAccPreCheck(t)
-	testCheckCompatibleVersion(t, featureForeignDataWrapper)
-
-	config := getTestConfig(t)
-	dsn := config.connStr("postgres")
-
-	// Create a test foreign data wrapper
-	dbExecute(t, dsn, "CREATE FOREIGN DATA WRAPPER test_fdw")
-
-	defer func() {
-		// Cleanup
-		dbExecute(t, dsn, "DROP FOREIGN DATA WRAPPER test_fdw CASCADE")
-	}()
-
-	// create a TF config with placeholder for privileges
-	// it will be filled in each step.
-	tfConfig := fmt.Sprintf(`
-resource "postgresql_role" "test" {
-	name     = "test_role"
-	password = "%s"
-	login    = true
-}
-
-resource "postgresql_grant" "test" {
-	depends_on           = [postgresql_role.test]
-	database             = "postgres"
-	role                 = postgresql_role.test.name
-	object_type          = "foreign_data_wrapper"
-	objects              = ["test_fdw"]
-	privileges           = %%s
-	with_grant_option    = %%s
-}
-`, testRolePassword)
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featurePrivileges)
-			testCheckCompatibleVersion(t, featureForeignDataWrapper)
-		},
-		Providers: testAccProviders,
-		Steps: []resource.TestStep{
-			// Grant usage
-			{
-				Config: fmt.Sprintf(tfConfig, `["USAGE"]`, `true`),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_foreign_data_wrapper_test_fdw"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "true"),
-					testCheckForeignDataWrapperPrivileges(t, true),
-				),
-			},
-			// Revoke all privileges
-			{
-				Config: fmt.Sprintf(tfConfig, `[]`, `false`),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
-					testCheckForeignDataWrapperPrivileges(t, false),
-				),
-			},
-		},
-	})
-}
-
-func TestAccPostgresqlGrantForeignServer(t *testing.T) {
-	skipIfNotAcc(t)
-	skipIfNotSuperuser(t)
-	// Configure provider and skip early, before any setup that would fail on CRDB
-	testAccPreCheck(t)
-	testCheckCompatibleVersion(t, featureForeignDataWrapper)
-
-	config := getTestConfig(t)
-	dsn := config.connStr("postgres")
-
-	// Create a test foreign data wrapper
-	dbExecute(t, dsn, "CREATE FOREIGN DATA WRAPPER test_fdw")
-	dbExecute(t, dsn, "CREATE SERVER test_srv FOREIGN DATA WRAPPER test_fdw")
-
-	defer func() {
-		// Cleanup
-		dbExecute(t, dsn, "DROP FOREIGN DATA WRAPPER test_fdw CASCADE")
-	}()
-
-	// create a TF config with placeholder for privileges
-	// it will be filled in each step.
-	tfConfig := fmt.Sprintf(`
-resource "postgresql_role" "test" {
-	name     = "test_role"
-	password = "%s"
-	login    = true
-}
-
-// From PostgreSQL 15, schema public is not wild open anymore
-resource "postgresql_grant" "public_usage" {
-	database          = "postgres"
-	schema            = "public"
-	role              = postgresql_role.test.name
-	object_type       = "schema"
-	privileges        = ["CREATE", "USAGE"]
-}
-
-resource "postgresql_grant" "test" {
-	depends_on        = [postgresql_role.test]
-	database          = "postgres"
-	role              = postgresql_role.test.name
-	object_type       = "foreign_server"
-	objects           = ["test_srv"]
-	privileges        = %%s
-	with_grant_option = %%s
-}
-`, testRolePassword)
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featurePrivileges)
-			testCheckCompatibleVersion(t, featureForeignDataWrapper)
-		},
-		Providers: testAccProviders,
-		Steps: []resource.TestStep{
-			// Grant usage
-			{
-				Config: fmt.Sprintf(tfConfig, `["USAGE"]`, `false`),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_foreign_server_test_srv"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
-					testCheckForeignServerPrivileges(t, true),
-				),
-			},
-			// Revoke all privileges
-			{
-				Config: fmt.Sprintf(tfConfig, `[]`, `false`),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
-					testCheckForeignServerPrivileges(t, false),
-				),
-			},
-		},
-	})
-}
-
-func TestAccPostgresqlGrantOwnerPG15(t *testing.T) {
-	skipIfNotAcc(t)
-
-	dbSuffix, teardown := setupTestDatabase(t, true, true)
-	defer teardown()
-
-	testTables := []string{"test_schema.test_table"}
-	createTestTables(t, dbSuffix, testTables, "")
-
-	dbName, roleName := getTestDBNames(dbSuffix)
-
-	var tfConfig = fmt.Sprintf(`
-	resource "postgresql_grant" "test" {
-		database    = "%s"
-		role        = "%s"
-		schema      = "test_schema"
-		object_type = "table"
-		privileges  = ["SELECT"]
-	}`, dbName, roleName)
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featureDatabaseOwnerRole)
-
-			// Change the owner to the new pg_database_owner role
-			func() {
-				config := getTestConfig(t)
-				db, err := sql.Open("postgres", config.connStr(dbName))
-				if err != nil {
-					t.Fatalf("could not connect to database %s: %v", dbName, err)
-				}
-
-				defer db.Close()
-
-				if _, err := db.Exec(`
-					ALTER SCHEMA test_schema OWNER TO pg_database_owner;
-					ALTER TABLE test_schema.test_table OWNER TO pg_database_owner;
-				`); err != nil {
-					t.Fatalf("could not alter owner of test_table (as %s): %v", config.Username, err)
-				}
-
-			}()
-		},
-		Providers: testAccProviders,
-		Steps: []resource.TestStep{
-			{
-				Config: tfConfig,
-				Check: resource.ComposeTestCheckFunc(
-					func(*terraform.State) error {
-						return testCheckTablesPrivileges(t, dbName, roleName, []string{"test_schema.test_table"}, []string{"SELECT"})
-					},
-				),
-			},
-			{
-				Config:  tfConfig,
-				Destroy: true,
-				Check: resource.ComposeTestCheckFunc(
-					func(*terraform.State) error {
-						return testCheckTablesPrivileges(t, dbName, roleName, []string{"test_schema.test_table"}, []string{})
-					},
-				),
-			},
-		},
-	})
-}
-
 func testCheckDatabasesPrivileges(t *testing.T, canCreate bool) func(*terraform.State) error {
 	return func(*terraform.State) error {
 		db := connectAsTestRole(t, "test_grant_role", "test_grant_db")
@@ -1482,44 +1018,6 @@ func testCheckSchemaPrivileges(t *testing.T, usage, create bool) func(*terraform
 		}
 
 		if err := testHasGrantForQuery(db, "CREATE TABLE test_schema.test_create (id serial)", create); err != nil {
-			return err
-		}
-
-		return nil
-	}
-}
-
-func testCheckForeignDataWrapperPrivileges(t *testing.T, usage bool) func(*terraform.State) error {
-	return func(*terraform.State) error {
-		config := getTestConfig(t)
-		dsn := config.connStr("postgres")
-
-		defer func() {
-			dbExecute(t, dsn, "DROP SERVER IF EXISTS test_srv")
-		}()
-		db := connectAsTestRole(t, "test_role", "postgres")
-		defer db.Close()
-
-		if err := testHasGrantForQuery(db, "CREATE SERVER test_srv FOREIGN DATA WRAPPER test_fdw", usage); err != nil {
-			return err
-		}
-
-		return nil
-	}
-}
-
-func testCheckForeignServerPrivileges(t *testing.T, usage bool) func(*terraform.State) error {
-	return func(*terraform.State) error {
-		config := getTestConfig(t)
-		dsn := config.connStr("postgres")
-
-		defer func() {
-			dbExecute(t, dsn, "DROP FOREIGN TABLE IF EXISTS test_tbl")
-		}()
-		db := connectAsTestRole(t, "test_role", "postgres")
-		defer db.Close()
-
-		if err := testHasGrantForQuery(db, "CREATE FOREIGN TABLE test_tbl() SERVER test_srv", usage); err != nil {
 			return err
 		}
 

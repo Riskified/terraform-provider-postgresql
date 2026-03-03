@@ -26,7 +26,6 @@ resource "postgresql_function" "basic_function" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureFunction)
 		},
 		Providers:    testAccProviders,
@@ -73,7 +72,6 @@ resource "postgresql_function" "basic_function" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureFunction)
 		},
 		Providers:    testAccProviders,
@@ -132,7 +130,6 @@ resource "postgresql_function" "increment" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureFunction)
 		},
 		Providers:    testAccProviders,
@@ -192,7 +189,6 @@ resource "postgresql_function" "func" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureFunction)
 		},
 		Providers:    testAccProviders,
