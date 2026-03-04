@@ -353,6 +353,16 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 		return fmt.Errorf("Error reading ROLE: %w", err)
 	}
 
+	// CRDB 25.4+ no longer populates pg_roles.rolconfig; settings are only in pg_db_role_setting.
+	// Fall back to pg_db_role_setting when rolconfig is empty.
+	if len(roleConfig) == 0 {
+		settingSQL := `SELECT setconfig FROM pg_catalog.pg_db_role_setting
+			WHERE setrole = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname=$1) AND setdatabase = 0`
+		if settingErr := db.QueryRow(settingSQL, roleID).Scan(&roleConfig); settingErr != nil && settingErr != sql.ErrNoRows {
+			return fmt.Errorf("Error reading role settings from pg_db_role_setting: %w", settingErr)
+		}
+	}
+
 	d.Set(roleNameAttr, roleName)
 	d.Set(roleCreateDBAttr, roleCreateDB)
 	d.Set(roleCreateRoleAttr, roleCreateRole)
