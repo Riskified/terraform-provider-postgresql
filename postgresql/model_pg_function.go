@@ -172,3 +172,15 @@ func normalizeFunctionBody(body string) string {
 	}
 	return body
 }
+
+func normalizeFunctionBodyForCompare(body string) string {
+	lines := strings.Split(body, "\n")
+	var normalized []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	return strings.Join(normalized, "\n")
+}

@@ -117,7 +117,25 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Computed:    true,
 				Description: "Function return type. If not specified, it will be calculated based on the output arguments",
 
-				DiffSuppressFunc: defaultDiffSuppressFunc,
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					normalize := func(t string) string {
+						switch strings.ToLower(strings.TrimSpace(t)) {
+						case "int8", "bigint", "integer", "int4", "int":
+							return "int8"
+						case "int2", "smallint":
+							return "int2"
+						case "float8", "double precision":
+							return "float8"
+						case "float4", "real":
+							return "float4"
+						case "bool", "boolean":
+							return "bool"
+						default:
+							return strings.ToLower(strings.TrimSpace(t))
+						}
+					}
+					return normalize(old) == normalize(new)
+				},
 			},
 			funcBodyAttr: {
 				Type:        schema.TypeString,
@@ -125,7 +143,8 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Description: "Body of the function.",
 
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					return normalizeFunctionBody(new) == old
+					return normalizeFunctionBodyForCompare(normalizeFunctionBody(new)) ==
+						normalizeFunctionBodyForCompare(old)
 				},
 				StateFunc: func(val interface{}) string {
 					return normalizeFunctionBody(val.(string))
