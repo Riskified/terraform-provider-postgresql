@@ -135,7 +135,19 @@ func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 	pgFunction.SecurityDefiner = len(pgFunctionData["Security"]) > 0
 	pgFunction.Strict = len(pgFunctionData["Strict"]) > 0
 	if len(pgFunctionData["Volatility"]) == 0 {
+		// CRDB emits IMMUTABLE/STABLE before LANGUAGE; scan the header (before first $) separately.
 		pgFunction.Volatility = defaultFunctionVolatility
+		dollarIdx := strings.Index(functionDefinition, "$")
+		header := functionDefinition
+		if dollarIdx >= 0 {
+			header = functionDefinition[:dollarIdx]
+		}
+		upperHeader := strings.ToUpper(header)
+		if strings.Contains(upperHeader, "IMMUTABLE") {
+			pgFunction.Volatility = "IMMUTABLE"
+		} else if strings.Contains(upperHeader, "STABLE") {
+			pgFunction.Volatility = "STABLE"
+		}
 	} else {
 		pgFunction.Volatility = pgFunctionData["Volatility"]
 	}
