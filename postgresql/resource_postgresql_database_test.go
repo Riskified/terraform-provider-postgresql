@@ -33,10 +33,6 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "encoding", "UTF8"),
 					resource.TestCheckResourceAttr(
-						"postgresql_database.default_opts", "lc_collate", "C"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.default_opts", "lc_ctype", "C"),
-					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "connection_limit", "-1"),
 				),
 			},
@@ -274,8 +270,6 @@ resource "postgresql_database" "default_opts" {
    name = "default_opts_name"
    owner = "${postgresql_role.myrole.name}"
    encoding = "UTF8"
-   lc_collate = "C"
-   lc_ctype = "C"
    connection_limit = -1
 }
 

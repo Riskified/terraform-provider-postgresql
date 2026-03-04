@@ -195,6 +195,49 @@ MultiLine Function
 	})
 }
 
+func TestPGFunctionParseCRDB(t *testing.T) {
+
+	var functionDefinition = `
+CREATE FUNCTION public.basic_function(num integer)
+RETURNS integer
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN num + 1;
+END;
+$function$
+	`
+
+	var pgFunction PGFunction
+
+	err := pgFunction.Parse(functionDefinition)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, PGFunction{
+		Name:            "basic_function",
+		Schema:          "public",
+		Returns:         "integer",
+		Language:        "plpgsql",
+		SecurityDefiner: false,
+		Strict:          false,
+		Volatility:      "VOLATILE",
+		Body: `
+BEGIN
+  RETURN num + 1;
+END;
+`,
+		Args: []PGFunctionArg{
+			{
+				Mode: "IN",
+				Name: "num",
+				Type: "integer",
+			},
+		},
+	}, pgFunction)
+}
+
 func TestPGFunctionArgParseWithDefault(t *testing.T) {
 
 	var functionArgDefinition = `default_null integer DEFAULT NULL::integer`
