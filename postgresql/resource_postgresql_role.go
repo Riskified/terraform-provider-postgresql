@@ -309,6 +309,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 		`COALESCE(rolvaliduntil::TEXT, 'infinity')`,
 	}
 
+	// values must match the SELECT column order: ARRAY(...) subquery first, then each entry in columns.
 	values := []interface{}{
 		&roleRoles,
 		&roleName,
