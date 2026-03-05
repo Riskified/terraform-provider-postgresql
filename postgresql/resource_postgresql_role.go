@@ -237,7 +237,6 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
-
 	if db.featureSupported(featureTransactionIsolation) {
 		if err := setDefaultTransactionIsolation(db, d); err != nil {
 			return err
@@ -455,7 +454,6 @@ func parseDurationToMillis(val string) (int, error) {
 	return int(d.Milliseconds()), nil
 }
 
-
 func readDefaultTransactionIsolation(roleConfig pq.ByteaArray) string {
 	for _, v := range roleConfig {
 		config := string(v)
@@ -527,7 +525,6 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
-
 	if db.featureSupported(featureTransactionIsolation) {
 		if err := setDefaultTransactionIsolation(db, d); err != nil {
 			return err
@@ -542,7 +539,6 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 
 	return resourcePostgreSQLRoleReadImpl(db, d)
 }
-
 
 func setRolePassword(db QueryAble, d *schema.ResourceData) error {
 	if !d.HasChange(rolePasswordAttr) {
@@ -789,7 +785,6 @@ func setIdleInTransactionSessionTimeout(db QueryAble, d *schema.ResourceData) er
 	}
 	return nil
 }
-
 
 func setDefaultTransactionIsolation(db QueryAble, d *schema.ResourceData) error {
 	if !d.HasChange(defaultTransactionIsolationAttr) {
