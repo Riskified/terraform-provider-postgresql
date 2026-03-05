@@ -239,7 +239,7 @@ GROUP BY routine_name`,
 		rows, err = txn.Query(query)
 
 	default:
-		query = fmt.Sprintf("with a as (show tables from %s) , b as (show grants on table * for %s) select a.table_name,  array_agg(privilege_type) from a inner join b on a.table_name=b.table_name and a.schema_name = b.schema_name  where a.type='%s'  and grantee= '%s' group by a.table_name;", d.Get("schema"), role, objectType, role)
+		query = fmt.Sprintf("with a as (show tables from %s) , b as (show grants on table * for %s) select a.table_name,  array_agg(privilege_type) from a inner join b on a.table_name=b.table_name and a.schema_name = b.schema_name  where a.type='%s'  and grantee= %s group by a.table_name;", pq.QuoteIdentifier(d.Get("schema").(string)), pq.QuoteIdentifier(role), objectType, pq.QuoteLiteral(role))
 		rows, err = txn.Query(query)
 	}
 
