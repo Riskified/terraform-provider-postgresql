@@ -200,10 +200,7 @@ func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData, role string) 
 func readSchemaRolePriviges(txn *sql.Tx, d *schema.ResourceData, role string) error {
 	schemaName := d.Get("schema").(string)
 	var privileges pq.ByteaArray
-	if strings.Contains(schemaName, "-") {
-		schemaName = "\"" + schemaName + "\""
-	}
-	query := fmt.Sprintf(`with a as ( show grants on schema %s for %s) select array_agg(privilege_type) from a where grantee='%s';`, schemaName, role, role)
+	query := fmt.Sprintf(`with a as ( show grants on schema %s for %s) select array_agg(privilege_type) from a where grantee=%s;`, pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(role), pq.QuoteLiteral(role))
 	if err := txn.QueryRow(query).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read privileges for schema %s: %w", schemaName, err)
 	}
