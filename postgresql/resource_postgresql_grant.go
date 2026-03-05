@@ -232,10 +232,10 @@ func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		query = fmt.Sprintf(
 			`SELECT routine_name, array_agg(privilege_type)
 FROM information_schema.role_routine_grants
-WHERE routine_schema = '%s'
-AND grantee = '%s'
+WHERE routine_schema = %s
+AND grantee = %s
 GROUP BY routine_name`,
-			d.Get("schema"), role)
+			pq.QuoteLiteral(d.Get("schema").(string)), pq.QuoteLiteral(role))
 		rows, err = txn.Query(query)
 
 	default:
