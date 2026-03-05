@@ -40,7 +40,6 @@ func TestAccPostgresqlSchema_Basic(t *testing.T) {
 	})
 }
 
-
 func TestAccPostgresqlSchema_Database(t *testing.T) {
 	skipIfNotAcc(t)
 
