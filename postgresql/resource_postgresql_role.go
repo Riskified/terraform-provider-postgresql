@@ -47,7 +47,7 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 				ForceNew:    true,
-				Description: "The name of the role",
+				Description: "The name of the role. Renaming a role forces it to be destroyed and recreated, which drops all associated grants.",
 			},
 			rolePasswordAttr: {
 				Type:        schema.TypeString,
