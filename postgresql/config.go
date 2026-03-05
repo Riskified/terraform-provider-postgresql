@@ -16,43 +16,16 @@ import (
 type featureName uint
 
 const (
-	featureCreateRoleWith featureName = iota
-	featureDatabaseOwnerRole
-	featureDBAllowConnections
-	featureDBIsTemplate
-	featureDBTablespace
-	featureUseDBTemplate
-	featureFallbackApplicationName
-	featureRLS
+	featureRLS featureName = iota
 	featureSchemaCreateIfNotExist
-	featureReplication
-	featureExtension
 	featurePrivileges
 	featureProcedure
 	featureRoutine
 	featurePrivilegesOnSchemas
-	featureForceDropDatabase
-	featurePid
-	featurePublishViaRoot
-	featurePubTruncate
-	featurePublication
-	featurePubWithoutTruncate
 	featureFunction
-	featureServer
-	fetureAclExplode
-	fetureAclItem
-	fetureTerminateBackendFunc
-	fetureRoleConnectionLimit
-	fetureRoleSuperuser
-	featureRoleroleInherit
-	fetureRoleEncryptedPass
-	featureAdvisoryXactLock
 	featureTransactionIsolation
 	featureSysPrivileges
 	featureFollowerReads
-	featureColumnPrivileges
-	featureForeignDataWrapper
-	featureRoleRename
 )
 
 var (
@@ -61,43 +34,16 @@ var (
 
 	// Mapping of feature flags to CockroachDB versions
 	featureSupportedCockroachdb = map[featureName]semver.Range{
-		featureCreateRoleWith:          semver.MustParseRange(">=1.0.0"),
-		featureDBAllowConnections:      semver.MustParseRange("<1.0.0"),
-		featureDBIsTemplate:            semver.MustParseRange("<1.0.0"),
-		featureUseDBTemplate:           semver.MustParseRange("<1.0.0"),
-		featureDBTablespace:            semver.MustParseRange("<1.0.0"),
-		featureFallbackApplicationName: semver.MustParseRange("<1.0.0"),
-		featureSchemaCreateIfNotExist:  semver.MustParseRange(">=1.0.0"),
-		featureRLS:                     semver.MustParseRange("<1.0.0"),
-		featureReplication:             semver.MustParseRange("<1.0.0"),
-		featureExtension:               semver.MustParseRange("<1.0.0"),
-		featurePrivileges:              semver.MustParseRange(">=21.2.17"),
-		featureProcedure:               semver.MustParseRange("<1.0.0"),
-		featureRoutine:                 semver.MustParseRange("<1.0.0"),
-		featurePrivilegesOnSchemas:     semver.MustParseRange(">=21.2.17"),
-		featureForceDropDatabase:       semver.MustParseRange("<1.0.0"),
-		featurePid:                     semver.MustParseRange(">=20.2.19"),
-		featurePublishViaRoot:          semver.MustParseRange("<1.0.0"),
-		featurePubTruncate:             semver.MustParseRange("<1.0.0"),
-		featurePubWithoutTruncate:      semver.MustParseRange("<1.0.0"),
-		featurePublication:             semver.MustParseRange("<1.0.0"),
-		featureFunction:                semver.MustParseRange(">=22.2.17"),
-		featureServer:                  semver.MustParseRange("<1.0.0"),
-		featureDatabaseOwnerRole:       semver.MustParseRange("<1.0.0"),
-		fetureAclExplode:               semver.MustParseRange("<1.0.0"),
-		fetureAclItem:                  semver.MustParseRange("<1.0.0"),
-		fetureTerminateBackendFunc:     semver.MustParseRange("<1.0.0"),
-		fetureRoleConnectionLimit:      semver.MustParseRange("<1.0.0"),
-		fetureRoleSuperuser:            semver.MustParseRange("<1.0.0"),
-		featureRoleroleInherit:         semver.MustParseRange("<1.0.0"),
-		fetureRoleEncryptedPass:        semver.MustParseRange("<1.0.0"),
-		featureAdvisoryXactLock:        semver.MustParseRange("<1.0.0"),
-		featureTransactionIsolation:    semver.MustParseRange(">=23.2.0"),
-		featureSysPrivileges:           semver.MustParseRange(">=22.2.0"),
-		featureFollowerReads:           semver.MustParseRange(">=22.2.0"),
-		featureColumnPrivileges:        semver.MustParseRange("<1.0.0"),
-		featureForeignDataWrapper:      semver.MustParseRange("<1.0.0"),
-		featureRoleRename:              semver.MustParseRange("<1.0.0"),
+		featureRLS:                  semver.MustParseRange(">=25.2.0"),
+		featureSchemaCreateIfNotExist: semver.MustParseRange(">=1.0.0"),
+		featurePrivileges:           semver.MustParseRange(">=21.2.17"),
+		featureProcedure:            semver.MustParseRange("<23.2.0"),
+		featureRoutine:              semver.MustParseRange("<1.0.0"),
+		featurePrivilegesOnSchemas:  semver.MustParseRange(">=21.2.17"),
+		featureFunction:             semver.MustParseRange(">=22.2.17"),
+		featureTransactionIsolation: semver.MustParseRange(">=23.2.0"),
+		featureSysPrivileges:        semver.MustParseRange(">=22.2.0"),
+		featureFollowerReads:        semver.MustParseRange(">=22.2.0"),
 	}
 )
 

@@ -41,7 +41,6 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "skip_reassign_owned", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "idle_in_transaction_session_timeout", "0"),
-					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "assume_role", ""),
 
 					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "name", "role_with_create_database"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "create_database", "true"),
@@ -76,21 +75,20 @@ resource "postgresql_role" "group_role" {
 }
 
 resource "postgresql_role" "update_role" {
-  name = "update_role2"
+  name = "update_role"
   login = true
   password = "titi"
+  valid_until = "2099-05-04 12:00:00+00"
   roles = ["${postgresql_role.group_role.name}"]
   search_path = ["mysearchpath"]
   statement_timeout = 30000
   idle_in_transaction_session_timeout = 60000
-  assume_role = "${postgresql_role.group_role.name}"
 }
 `
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
-			testCheckCompatibleVersion(t, featureRoleRename)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
@@ -107,28 +105,24 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.#", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "0"),
-					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", ""),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
 			},
 			{
 				Config: configUpdate,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("update_role2", []string{"group_role"}, nil),
-					resource.TestCheckResourceAttr(
-						"postgresql_role.update_role", "name", "update_role2",
-					),
+					testAccCheckPostgresqlRoleExists("update_role", []string{"group_role"}, nil),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "titi"),
-					resource.TestCheckResourceAttr("postgresql_role.update_role", "valid_until", "infinity"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "valid_until", "2099-05-04 12:00:00+00"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "roles.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "roles.0", "group_role"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.0", "mysearchpath"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "30000"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "60000"),
-					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", "group_role"),
-					testAccCheckRoleCanLogin(t, "update_role2", "titi"),
+					testAccCheckRoleCanLogin(t, "update_role", "titi"),
 				),
 			},
 			// apply the first one again to test that the granted role is correctly
@@ -144,7 +138,6 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.#", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "0"),
-					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", ""),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
 			},
@@ -387,7 +380,6 @@ resource "postgresql_role" "role_with_defaults" {
   valid_until = "infinity"
   statement_timeout = 0
   idle_in_transaction_session_timeout = 0
-  assume_role = ""
 }
 
 resource "postgresql_role" "role_with_create_database" {
