@@ -320,11 +320,6 @@ func getDatabase(d *schema.ResourceData, databaseName string) string {
 
 const publicRole = "public"
 
-// pgLockRole is a no-op for CockroachDB (advisory locks not supported).
-func pgLockRole(txn *sql.Tx, db *DBConnection, role string) error {
-	return nil
-}
-
 func findStringSubmatchMap(expression string, text string) map[string]string {
 
 	r := regexp.MustCompile(expression)
