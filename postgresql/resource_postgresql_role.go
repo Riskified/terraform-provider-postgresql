@@ -484,8 +484,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
-	if err := setRoleBypassRLS(db, d); err != nil {
-		return err
+	if db.featureSupported(featureRLS) {
+		if err := setRoleBypassRLS(db, d); err != nil {
+			return err
+		}
 	}
 
 	if err := setRoleCreateDB(db, d); err != nil {
