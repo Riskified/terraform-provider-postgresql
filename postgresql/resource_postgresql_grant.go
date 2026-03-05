@@ -188,7 +188,7 @@ func readSystemRolePriviges(txn *sql.Tx, role string) error {
 func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData, role string) error {
 	dbName := d.Get("database").(string)
 	var privileges pq.ByteaArray
-	query := fmt.Sprintf(`with a as (show grants on database %s for %s) select array_agg(privilege_type) from a where grantee='%s'`, dbName, role, role)
+	query := fmt.Sprintf(`with a as (show grants on database %s for %s) select array_agg(privilege_type) from a where grantee=%s`, pq.QuoteIdentifier(dbName), pq.QuoteIdentifier(role), pq.QuoteLiteral(role))
 	if err := txn.QueryRow(query).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 	}
