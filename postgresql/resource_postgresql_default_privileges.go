@@ -252,8 +252,15 @@ func readRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) e
 	if pgSchema != "" {
 		inSchema = fmt.Sprintf("IN SCHEMA %s", pq.QuoteIdentifier(pgSchema))
 	}
-	// CockroachDB uses SHOW DEFAULT PRIVILEGES instead of aclexplode
-	query = fmt.Sprintf("with a as (show DEFAULT PRIVILEGES for role %s %s) select array_agg(privilege_type) from a where grantee = '%s' and object_type = '%ss';", owner, inSchema, role, objectType)
+	// CockroachDB uses SHOW DEFAULT PRIVILEGES instead of aclexplode.
+	// For functions, CRDB may return object_type = 'functions' or 'routines' depending on version.
+	var objectTypeClause string
+	if objectType == "function" {
+		objectTypeClause = "object_type IN ('functions', 'routines')"
+	} else {
+		objectTypeClause = fmt.Sprintf("object_type = '%ss'", objectType)
+	}
+	query = fmt.Sprintf("with a as (show DEFAULT PRIVILEGES for role %s %s) select array_agg(privilege_type) from a where grantee = '%s' and %s;", owner, inSchema, role, objectTypeClause)
 
 	var privileges pq.ByteaArray
 	if err := db.QueryRow(query).Scan(&privileges); err != nil {

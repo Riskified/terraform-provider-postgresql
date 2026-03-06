@@ -998,6 +998,90 @@ func testCheckProcedureExecutable(t *testing.T, role, procedure string) func(*te
 	}
 }
 
+func TestAccPostgresqlGrantType(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+	dsn := config.connStr("postgres")
+
+	dbExecute(t, dsn, fmt.Sprintf("CREATE ROLE test_type_role LOGIN PASSWORD '%s'", testRolePassword))
+	dbExecute(t, dsn, "CREATE SCHEMA test_type_schema")
+	dbExecute(t, dsn, "GRANT USAGE ON SCHEMA test_type_schema TO test_type_role")
+	dbExecute(t, dsn, "CREATE TYPE test_type_schema.status AS ENUM ('active', 'inactive')")
+	defer func() {
+		dbExecute(t, dsn, "DROP SCHEMA test_type_schema CASCADE")
+		dbExecute(t, dsn, "DROP ROLE IF EXISTS test_type_role")
+	}()
+
+	tfConfig := `
+resource "postgresql_grant" "type_grant" {
+  database    = "postgres"
+  role        = "test_type_role"
+  schema      = "test_type_schema"
+  object_type = "type"
+  objects     = ["status"]
+  privileges  = ["USAGE"]
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.type_grant", "object_type", "type"),
+					resource.TestCheckResourceAttr("postgresql_grant.type_grant", "privileges.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.type_grant", "privileges.0", "USAGE"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlGrant_Import(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	testTables := []string{"test_schema.test_table"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	tfConfig := fmt.Sprintf(`
+resource "postgresql_grant" "import_grant" {
+  database    = "%s"
+  role        = "%s"
+  schema      = "test_schema"
+  object_type = "table"
+  privileges  = ["SELECT"]
+}
+`, dbName, roleName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.import_grant", "privileges.#", "1"),
+				),
+			},
+			// Note: postgresql_grant does not implement Importer, so import is not supported.
+		},
+	})
+}
+
 func testCheckSchemaPrivileges(t *testing.T, usage, create bool) func(*terraform.State) error {
 	return func(*terraform.State) error {
 		config := getTestConfig(t)

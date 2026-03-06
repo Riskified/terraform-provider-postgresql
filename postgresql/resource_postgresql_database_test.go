@@ -250,6 +250,57 @@ func checkDatabaseExists(client *Client, dbName string) (bool, error) {
 	return true, nil
 }
 
+func TestAccPostgresqlDatabase_LcCollate(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				// CRDB ignores lc_collate/lc_ctype and uses the system locale, so don't set them in config.
+				// Just verify the attributes are read back with whatever the system locale is.
+				Config: `
+resource "postgresql_database" "lc_test" {
+  name = "lc_collate_test_db"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.lc_test"),
+					resource.TestCheckResourceAttr("postgresql_database.lc_test", "name", "lc_collate_test_db"),
+					resource.TestCheckResourceAttrSet("postgresql_database.lc_test", "lc_collate"),
+					resource.TestCheckResourceAttrSet("postgresql_database.lc_test", "lc_ctype"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlDatabase_Import(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_database" "import_db" {
+  name     = "import_test_db"
+  encoding = "UTF8"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.import_db"),
+				),
+			},
+			{
+				ResourceName:      "postgresql_database.import_db",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 var testAccPostgreSQLDatabaseConfig = `
 resource "postgresql_role" "myrole" {
   name = "myrole"

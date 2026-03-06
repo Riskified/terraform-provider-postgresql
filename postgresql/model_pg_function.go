@@ -134,6 +134,16 @@ func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 	pgFunction.Args = args
 	pgFunction.SecurityDefiner = len(pgFunctionData["Security"]) > 0
 	pgFunction.Strict = len(pgFunctionData["Strict"]) > 0
+	if !pgFunction.Strict {
+		// CRDB emits null-call behavior before LANGUAGE; scan the header (before first $) separately.
+		header := functionDefinition
+		if dollarIdx := strings.Index(functionDefinition, "$"); dollarIdx >= 0 {
+			header = functionDefinition[:dollarIdx]
+		}
+		upperHeader := strings.ToUpper(header)
+		pgFunction.Strict = strings.Contains(upperHeader, "RETURNS NULL ON NULL INPUT") ||
+			strings.Contains(upperHeader, "STRICT")
+	}
 	if len(pgFunctionData["Volatility"]) == 0 {
 		// CRDB emits IMMUTABLE/STABLE before LANGUAGE; scan the header (before first $) separately.
 		pgFunction.Volatility = defaultFunctionVolatility

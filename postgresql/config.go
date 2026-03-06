@@ -34,7 +34,7 @@ var (
 
 	// Mapping of feature flags to CockroachDB versions
 	featureSupportedCockroachdb = map[featureName]semver.Range{
-		featureRLS:                    semver.MustParseRange(">=25.2.0"),
+		featureRLS:                    semver.MustParseRange(">=25.3.0"),
 		featureSchemaCreateIfNotExist: semver.MustParseRange(">=1.0.0"),
 		featurePrivileges:             semver.MustParseRange(">=21.2.17"),
 		featureProcedure:              semver.MustParseRange("<23.2.0"),

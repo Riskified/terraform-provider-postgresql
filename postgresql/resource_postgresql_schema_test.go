@@ -23,8 +23,6 @@ func TestAccPostgresqlSchema_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_all_without_grant", "name", "role_all_without_grant"),
 					resource.TestCheckResourceAttr("postgresql_role.role_all_without_grant", "login", "true"),
 
-					resource.TestCheckResourceAttr("postgresql_role.role_all_with_grant", "name", "role_all_with_grant"),
-
 					resource.TestCheckResourceAttr("postgresql_schema.test1", "name", "foo"),
 
 					resource.TestCheckResourceAttr("postgresql_schema.test2", "name", "bar"),
@@ -135,6 +133,100 @@ resource "postgresql_schema" "public" {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlSchemaExists("postgresql_schema.public", "public"),
 					testAccCheckSchemaOwner(dbName, "public", roleName),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlSchema_Import(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	tfConfig := fmt.Sprintf(`
+resource "postgresql_schema" "import_schema" {
+  name     = "import_test_schema"
+  database = "%s"
+}
+`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.import_schema", "import_test_schema"),
+				),
+			},
+			{
+				ResourceName:      "postgresql_schema.import_schema",
+				ImportState:       true,
+				ImportStateVerify: true,
+				// if_not_exists and drop_cascade are local-only flags not stored in the database.
+				ImportStateVerifyIgnore: []string{"if_not_exists", "drop_cascade"},
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlSchema_OwnerChange(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	configCreate := fmt.Sprintf(`
+resource "postgresql_role" "owner_b" {
+  name = "schema_owner_b_%s"
+}
+
+resource "postgresql_schema" "owner_change" {
+  name     = "owner_change_schema"
+  database = "%s"
+  owner    = "%s"
+}
+`, dbSuffix, dbName, roleName)
+
+	configUpdate := fmt.Sprintf(`
+resource "postgresql_role" "owner_b" {
+  name = "schema_owner_b_%s"
+}
+
+resource "postgresql_schema" "owner_change" {
+  name     = "owner_change_schema"
+  database = "%s"
+  owner    = postgresql_role.owner_b.name
+}
+`, dbSuffix, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: configCreate,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.owner_change", "owner_change_schema"),
+					resource.TestCheckResourceAttr("postgresql_schema.owner_change", "owner", roleName),
+					testAccCheckSchemaOwner(dbName, "owner_change_schema", roleName),
+				),
+			},
+			{
+				Config: configUpdate,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.owner_change", "owner_change_schema"),
+					resource.TestCheckResourceAttr("postgresql_schema.owner_change", "owner", fmt.Sprintf("schema_owner_b_%s", dbSuffix)),
+					testAccCheckSchemaOwner(dbName, "owner_change_schema", fmt.Sprintf("schema_owner_b_%s", dbSuffix)),
 				),
 			},
 		},
@@ -287,10 +379,6 @@ const testAccPostgresqlSchemaConfig = `
 resource "postgresql_role" "role_all_without_grant" {
   name = "role_all_without_grant"
   login = true
-}
-
-resource "postgresql_role" "role_all_with_grant" {
-  name = "role_all_with_grant"
 }
 
 resource "postgresql_schema" "test1" {

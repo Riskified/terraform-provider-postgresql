@@ -353,6 +353,248 @@ func checkSearchPath(client *Client, roleName string, expectedSearchPath []strin
 	return nil
 }
 
+func TestAccPostgresqlRole_PrivilegeFlags(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_role" "create_db_role" {
+  name            = "priv_flag_create_db"
+  create_database = true
+}
+
+resource "postgresql_role" "create_role_role" {
+  name        = "priv_flag_create_role"
+  create_role = true
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("priv_flag_create_db", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.create_db_role", "create_database", "true"),
+					testCheckRoleBoolDBAttr("priv_flag_create_db", "rolcreatedb", true),
+
+					testAccCheckPostgresqlRoleExists("priv_flag_create_role", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.create_role_role", "create_role", "true"),
+					testCheckRoleBoolDBAttr("priv_flag_create_role", "rolcreaterole", true),
+				),
+			},
+			// Note: ALTER ROLE WITH NOCREATEDB is not reliably supported on older CRDB versions (24.3, 25.2).
+			// Only test creation with true; update to false is skipped.
+		},
+	})
+}
+
+func TestAccPostgresqlRole_BypassRLS(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featureRLS)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_role" "bypass_rls" {
+  name                       = "priv_flag_bypass_rls"
+  bypass_row_level_security  = true
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("priv_flag_bypass_rls", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.bypass_rls", "bypass_row_level_security", "true"),
+					testCheckRoleBoolDBAttr("priv_flag_bypass_rls", "rolbypassrls", true),
+				),
+			},
+			{
+				Config: `
+resource "postgresql_role" "bypass_rls" {
+  name                       = "priv_flag_bypass_rls"
+  bypass_row_level_security  = false
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.bypass_rls", "bypass_row_level_security", "false"),
+					testCheckRoleBoolDBAttr("priv_flag_bypass_rls", "rolbypassrls", false),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlRole_ValidUntil(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_role" "valid_until_role" {
+  name        = "valid_until_role"
+  login       = true
+  password    = "testpwd"
+  valid_until = "2030-01-01 00:00:00+00"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("valid_until_role", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.valid_until_role", "valid_until", "2030-01-01 00:00:00+00"),
+				),
+			},
+			// Note: updating valid_until to "infinity" is broken on CRDB 24.3, 25.2, and 25.4.
+			// Only test initial creation with a future date.
+		},
+	})
+}
+
+func TestAccPostgresqlRole_DefaultTransactionSettings(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featureTransactionIsolation)
+			testCheckCompatibleVersion(t, featureFollowerReads)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_role" "txn_settings_role" {
+  name                                  = "txn_settings_role"
+  default_transaction_isolation         = "serializable"
+  default_transaction_use_follower_reads = "on"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("txn_settings_role", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.txn_settings_role", "default_transaction_isolation", "serializable"),
+					resource.TestCheckResourceAttr("postgresql_role.txn_settings_role", "default_transaction_use_follower_reads", "on"),
+				),
+			},
+			// Clear both settings.
+			{
+				Config: `
+resource "postgresql_role" "txn_settings_role" {
+  name = "txn_settings_role"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.txn_settings_role", "default_transaction_isolation", ""),
+					resource.TestCheckResourceAttr("postgresql_role.txn_settings_role", "default_transaction_use_follower_reads", ""),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlRole_SkipDropFlags(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+	dsn := config.connStr("postgres")
+
+	// Clean up the role that Terraform intentionally leaves behind (skip_drop_role=true).
+	defer dbExecute(t, dsn, `DROP ROLE IF EXISTS "skip_drop_test_role"`)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:  func() { testAccPreCheck(t) },
+		Providers: testAccProviders,
+		// CheckDestroy verifies the role is NOT dropped when skip_drop_role=true.
+		CheckDestroy: func(s *terraform.State) error {
+			exists, err := checkRoleExists(testAccProvider.Meta().(*Client), "skip_drop_test_role")
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return fmt.Errorf("expected role 'skip_drop_test_role' to still exist after destroy (skip_drop_role=true)")
+			}
+			return nil
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_role" "skip_drop" {
+  name           = "skip_drop_test_role"
+  skip_drop_role = true
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("skip_drop_test_role", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.skip_drop", "skip_drop_role", "true"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlRole_Import(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_role" "import_role" {
+  name            = "import_test_role"
+  login           = true
+  create_database = true
+  create_role     = true
+  valid_until     = "2030-01-01 00:00:00+00"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("import_test_role", nil, nil),
+				),
+			},
+			{
+				ResourceName:  "postgresql_role.import_role",
+				ImportState:   true,
+				ImportStateVerify: true,
+				// password is not readable from the DB; skip_drop_role and skip_reassign_owned
+				// are local-only flags not stored in the database.
+				ImportStateVerifyIgnore: []string{"password", "skip_drop_role", "skip_reassign_owned"},
+			},
+		},
+	})
+}
+
+// testCheckRoleBoolDBAttr verifies a boolean column value in pg_roles for the named role.
+func testCheckRoleBoolDBAttr(roleName, column string, expected bool) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		client := testAccProvider.Meta().(*Client)
+		db, err := client.Connect()
+		if err != nil {
+			return err
+		}
+		var val bool
+		if err := db.QueryRow(
+			fmt.Sprintf("SELECT %s FROM pg_roles WHERE rolname=$1", column), roleName,
+		).Scan(&val); err != nil {
+			return fmt.Errorf("error reading %s for role %s: %w", column, roleName, err)
+		}
+		if val != expected {
+			return fmt.Errorf("expected pg_roles.%s=%v for role %s, got %v", column, expected, roleName, val)
+		}
+		return nil
+	}
+}
+
 var testAccPostgresqlRoleConfig = `
 resource "postgresql_role" "myrole2" {
   name = "myrole2"
