@@ -365,7 +365,7 @@ CREATE FUNCTION test_schema.dp_test_fn() RETURNS integer
 `); err != nil {
 							return fmt.Errorf("could not create test function: %w", err)
 						}
-						defer db.Exec("DROP FUNCTION IF EXISTS test_schema.dp_test_fn()")
+						defer func() { _, _ = db.Exec("DROP FUNCTION IF EXISTS test_schema.dp_test_fn()") }()
 
 						roleDB := connectAsTestRole(t, roleName, dbName)
 						defer roleDB.Close()
@@ -420,7 +420,7 @@ resource "postgresql_default_privileges" "type_priv" {
 						if _, err := db.Exec(`CREATE TYPE test_schema.dp_status AS ENUM ('active', 'inactive')`); err != nil {
 							return fmt.Errorf("could not create test type: %w", err)
 						}
-						defer db.Exec("DROP TYPE IF EXISTS test_schema.dp_status")
+						defer func() { _, _ = db.Exec("DROP TYPE IF EXISTS test_schema.dp_status") }()
 
 						// Verify the grantee can use the type via a simple cast (no CREATE privilege needed).
 						roleDB := connectAsTestRole(t, roleName, dbName)

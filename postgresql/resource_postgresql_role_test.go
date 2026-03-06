@@ -563,8 +563,8 @@ resource "postgresql_role" "import_role" {
 				),
 			},
 			{
-				ResourceName:  "postgresql_role.import_role",
-				ImportState:   true,
+				ResourceName:      "postgresql_role.import_role",
+				ImportState:       true,
 				ImportStateVerify: true,
 				// password is not readable from the DB; skip_drop_role and skip_reassign_owned
 				// are local-only flags not stored in the database.
