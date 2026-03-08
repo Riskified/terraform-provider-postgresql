@@ -270,9 +270,9 @@ func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceDat
 // helper functions
 func jobExists(db QueryAble, jobID string) (bool, error) {
 	var jobIDExists string
-	// Consider changefeed as existing when running, paused, or failed so that
+	// Consider changefeed as existing when running or paused so that
 	// Terraform plans update in-place (or drop+create) instead of "object will be created".
-	err := db.QueryRow(fmt.Sprintf("SELECT job_id FROM [SHOW changefeed JOB %s] WHERE status IN ('running', 'paused', 'failed');", jobID)).Scan(&jobIDExists)
+	err := db.QueryRow(fmt.Sprintf("SELECT job_id FROM [SHOW changefeed JOB %s] WHERE status IN ('running', 'paused');", jobID)).Scan(&jobIDExists)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
