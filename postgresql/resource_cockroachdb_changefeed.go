@@ -110,12 +110,6 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 	if err = txn.QueryRow(sqlChangefeed).Scan(&jobID); err != nil {
 		return fmt.Errorf("error creating changefeed: %w", err)
 	}
-	if db.dbType != dbTypeCockroachdb {
-		if err = txn.Commit(); err != nil {
-			return fmt.Errorf("could not commit transaction: %w", err)
-		}
-	}
-
 	d.SetId(jobID)
 	d.Set(CDCAvroSchemaPrefix, avroSchemaPrefix)
 	d.Set(CDCRegistryConnectionName, registryConnectionName)

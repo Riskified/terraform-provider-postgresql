@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -27,14 +26,6 @@ func testCheckCompatibleVersion(t *testing.T, feature featureName) {
 	}
 	if !db.featureSupported(feature) {
 		t.Skipf("Skip extension tests for Postgres %s", db.version)
-	}
-}
-
-// Some tests have to be run as a real superuser (not RDS like)
-func testSuperuserPreCheck(t *testing.T) {
-	client := testAccProvider.Meta().(*Client)
-	if !client.config.Superuser {
-		t.Skip("Skip test: This test can be run only with a real superuser")
 	}
 }
 
@@ -65,13 +56,6 @@ func getTestConfig(t *testing.T) Config {
 func skipIfNotAcc(t *testing.T) {
 	if os.Getenv(resource.EnvTfAcc) == "" {
 		t.Skipf("Acceptance tests skipped unless env '%s' set", resource.EnvTfAcc)
-	}
-}
-
-// Skip tests on RDS like environments
-func skipIfNotSuperuser(t *testing.T) {
-	if os.Getenv("PGSUPERUSER") == "false" {
-		t.Skip("Acceptance tests skipped due to lack of real superuser privileges")
 	}
 }
 
@@ -107,7 +91,7 @@ func setupTestDatabase(t *testing.T, createDB, createRole bool) (string, func())
 
 	if createRole {
 		dbExecute(t, config.connStr("postgres"), fmt.Sprintf(
-			"CREATE ROLE %s LOGIN ENCRYPTED PASSWORD '%s'",
+			"CREATE ROLE %s LOGIN PASSWORD '%s'",
 			roleName, testRolePassword,
 		))
 	}
@@ -133,7 +117,7 @@ func createTestRole(t *testing.T, roleName string) func() {
 	config := getTestConfig(t)
 
 	dbExecute(t, config.connStr("postgres"), fmt.Sprintf(
-		"CREATE ROLE %s LOGIN ENCRYPTED PASSWORD '%s'",
+		"CREATE ROLE %s LOGIN PASSWORD '%s'",
 		roleName, testRolePassword,
 	))
 
@@ -154,10 +138,8 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 	defer db.Close()
 
 	if owner != "" {
-		if !config.Superuser {
-			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
-				t.Fatalf("could not grant role %s to current user: %v", owner, err)
-			}
+		if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
+			t.Fatalf("could not grant role %s to current user: %v", owner, err)
 		}
 		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s", owner)); err != nil {
 			t.Fatalf("could not set role to %s: %v", owner, err)
@@ -174,7 +156,7 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 			}
 		}
 	}
-	if owner != "" && !config.Superuser {
+	if owner != "" {
 		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
 			t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
 		}
@@ -188,7 +170,7 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 		}
 		defer db.Close()
 
-		if owner != "" && !config.Superuser {
+		if owner != "" {
 			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
 				t.Fatalf("could not grant role %s to current user: %v", owner, err)
 			}
@@ -199,7 +181,7 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 				t.Fatalf("could not drop table %s: %v", table, err)
 			}
 		}
-		if owner != "" && !config.Superuser {
+		if owner != "" {
 			if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
 				t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
 			}
@@ -220,10 +202,8 @@ func createTestSchemas(t *testing.T, dbSuffix string, schemas []string, owner st
 	defer db.Close()
 
 	if owner != "" {
-		if !config.Superuser {
-			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
-				t.Fatalf("could not grant role %s to current user: %v", owner, err)
-			}
+		if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
+			t.Fatalf("could not grant role %s to current user: %v", owner, err)
 		}
 		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s", owner)); err != nil {
 			t.Fatalf("could not set role to %s: %v", owner, err)
@@ -240,7 +220,7 @@ func createTestSchemas(t *testing.T, dbSuffix string, schemas []string, owner st
 			}
 		}
 	}
-	if owner != "" && !config.Superuser {
+	if owner != "" {
 		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
 			t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
 		}
@@ -254,7 +234,7 @@ func createTestSchemas(t *testing.T, dbSuffix string, schemas []string, owner st
 		}
 		defer db.Close()
 
-		if owner != "" && !config.Superuser {
+		if owner != "" {
 			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
 				t.Fatalf("could not grant role %s to current user: %v", owner, err)
 			}
@@ -265,7 +245,7 @@ func createTestSchemas(t *testing.T, dbSuffix string, schemas []string, owner st
 				t.Fatalf("could not drop schema %s: %v", schema, err)
 			}
 		}
-		if owner != "" && !config.Superuser {
+		if owner != "" {
 			if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
 				t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
 			}
@@ -285,10 +265,8 @@ func createTestSequences(t *testing.T, dbSuffix string, sequences []string, owne
 	defer db.Close()
 
 	if owner != "" {
-		if !config.Superuser {
-			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
-				t.Fatalf("could not grant role %s to current user: %v", owner, err)
-			}
+		if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
+			t.Fatalf("could not grant role %s to current user: %v", owner, err)
 		}
 		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s", owner)); err != nil {
 			t.Fatalf("could not set role to %s: %v", owner, err)
@@ -305,7 +283,7 @@ func createTestSequences(t *testing.T, dbSuffix string, sequences []string, owne
 			}
 		}
 	}
-	if owner != "" && !config.Superuser {
+	if owner != "" {
 		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
 			t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
 		}
@@ -318,7 +296,7 @@ func createTestSequences(t *testing.T, dbSuffix string, sequences []string, owne
 		}
 		defer db.Close()
 
-		if owner != "" && !config.Superuser {
+		if owner != "" {
 			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
 				t.Fatalf("could not grant role %s to current user: %v", owner, err)
 			}
@@ -329,7 +307,7 @@ func createTestSequences(t *testing.T, dbSuffix string, sequences []string, owne
 				t.Fatalf("could not drop table %s: %v", sequence, err)
 			}
 		}
-		if owner != "" && !config.Superuser {
+		if owner != "" {
 			if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
 				t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
 			}
@@ -391,43 +369,38 @@ func testCheckTablesPrivileges(t *testing.T, dbName, roleName string, tables []s
 }
 
 func testCheckSchemasPrivileges(t *testing.T, dbName, roleName string, schemas []string, allowedPrivileges []string) error {
+	// Create a probe table in each schema as admin and grant SELECT on it to the test role.
+	// This lets us test USAGE by attempting SELECT: schema USAGE is enforced as an outer gate
+	// on both PostgreSQL and CockroachDB, even when table-level SELECT is granted.
+	// (Unlike DROP TABLE IF EXISTS, which CRDB silently allows on non-existent tables regardless of USAGE.)
+	config := getTestConfig(t)
+	adminDB, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		return fmt.Errorf("could not open admin connection for %s: %w", dbName, err)
+	}
+	defer adminDB.Close()
+
+	for _, schema := range schemas {
+		if _, err := adminDB.Exec(fmt.Sprintf("CREATE TABLE %s.usage_probe()", schema)); err != nil {
+			return fmt.Errorf("could not create usage probe table in %s: %w", schema, err)
+		}
+		if _, err := adminDB.Exec(fmt.Sprintf("GRANT SELECT ON %s.usage_probe TO %s", schema, roleName)); err != nil {
+			return fmt.Errorf("could not grant SELECT on probe table in %s: %w", schema, err)
+		}
+	}
+	defer func() {
+		for _, schema := range schemas {
+			_, _ = adminDB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.usage_probe", schema))
+		}
+	}()
+
 	db := connectAsTestRole(t, roleName, dbName)
 	defer db.Close()
 
 	for _, schema := range schemas {
 		queries := map[string]string{
-			"USAGE":  fmt.Sprintf("DROP TABLE IF EXISTS %s.test_table", schema),
+			"USAGE":  fmt.Sprintf("SELECT 1 FROM %s.usage_probe LIMIT 0", schema),
 			"CREATE": fmt.Sprintf("CREATE TABLE %s.test_table()", schema),
-		}
-
-		for queryType, query := range queries {
-			if err := testHasGrantForQuery(db, query, sliceContainsStr(allowedPrivileges, queryType)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func testCheckColumnPrivileges(t *testing.T, dbName, roleName string, tables []string, allowedPrivileges []string, columns []string) error {
-	db := connectAsTestRole(t, roleName, dbName)
-	defer db.Close()
-
-	columnValues := []string{}
-	for _, col := range columns {
-		columnValues = append(columnValues, fmt.Sprint("'", col, "'"))
-	}
-
-	updateColumnValues := []string{}
-	for i := range columns {
-		updateColumnValues = append(updateColumnValues, fmt.Sprint(columns[i], " = ", columnValues[i]))
-	}
-
-	for _, table := range tables {
-		queries := map[string]string{
-			"SELECT": fmt.Sprintf("SELECT %s FROM %s", strings.Join(columns, ", "), table),
-			"INSERT": fmt.Sprintf("INSERT INTO %s(%s) VALUES (%s)", table, strings.Join(columns, ", "), strings.Join(columnValues, ", ")),
-			"UPDATE": fmt.Sprintf("UPDATE %s SET %s", table, strings.Join(updateColumnValues, ", ")),
 		}
 
 		for queryType, query := range queries {

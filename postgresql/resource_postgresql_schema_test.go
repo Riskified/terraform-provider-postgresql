@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -22,159 +23,15 @@ func TestAccPostgresqlSchema_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_all_without_grant", "name", "role_all_without_grant"),
 					resource.TestCheckResourceAttr("postgresql_role.role_all_without_grant", "login", "true"),
 
-					resource.TestCheckResourceAttr("postgresql_role.role_all_with_grant", "name", "role_all_with_grant"),
-
 					resource.TestCheckResourceAttr("postgresql_schema.test1", "name", "foo"),
 
 					resource.TestCheckResourceAttr("postgresql_schema.test2", "name", "bar"),
 					resource.TestCheckResourceAttr("postgresql_schema.test2", "owner", "role_all_without_grant"),
 					resource.TestCheckResourceAttr("postgresql_schema.test2", "if_not_exists", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test2", "policy.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_schema.test2", "policy.0.create", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test2", "policy.0.create_with_grant", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test2", "policy.0.usage", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test2", "policy.0.usage_with_grant", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test2", "policy.0.role", "role_all_without_grant"),
 
 					resource.TestCheckResourceAttr("postgresql_schema.test3", "name", "baz"),
 					resource.TestCheckResourceAttr("postgresql_schema.test3", "owner", "role_all_without_grant"),
 					resource.TestCheckResourceAttr("postgresql_schema.test3", "if_not_exists", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test3", "policy.#", "2"),
-					resource.TestCheckResourceAttr("postgresql_schema.test3", "policy.0.create_with_grant", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test3", "policy.0.usage_with_grant", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test3", "policy.0.role", "role_all_with_grant"),
-					resource.TestCheckResourceAttr("postgresql_schema.test3", "policy.1.create", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test3", "policy.1.usage", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test3", "policy.1.role", "role_all_without_grant"),
-				),
-			},
-		},
-	})
-}
-
-func TestAccPostgresqlSchema_AddPolicy(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			// TODO: Need to check if remooving policy is buggy
-			// because non-superuser fails to drop a role
-			testSuperuserPreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
-		Steps: []resource.TestStep{
-			{
-				Config: testAccPostgresqlSchemaGrant1,
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlSchemaExists("postgresql_schema.test4", "test4"),
-
-					resource.TestCheckResourceAttr("postgresql_role.all_without_grant_stay", "name", "all_without_grant_stay"),
-					resource.TestCheckResourceAttr("postgresql_role.all_without_grant_drop", "name", "all_without_grant_drop"),
-					resource.TestCheckResourceAttr("postgresql_role.policy_compose", "name", "policy_compose"),
-					resource.TestCheckResourceAttr("postgresql_role.policy_move", "name", "policy_move"),
-
-					resource.TestCheckResourceAttr("postgresql_role.all_with_grantstay", "name", "all_with_grantstay"),
-					resource.TestCheckResourceAttr("postgresql_role.all_with_grantdrop", "name", "all_with_grantdrop"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "name", "test4"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "owner", "all_without_grant_stay"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.#", "7"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.0.create", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.0.create_with_grant", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.0.role", "all_with_grantdrop"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.0.usage", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.0.usage_with_grant", "true"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.1.create", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.1.create_with_grant", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.1.role", "all_with_grantstay"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.1.usage", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.1.usage_with_grant", "true"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.2.create", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.2.create_with_grant", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.2.role", "policy_compose"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.2.usage", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.2.usage_with_grant", "true"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.3.create", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.3.create_with_grant", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.3.role", "all_without_grant_drop"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.3.usage", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.3.usage_with_grant", "false"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.4.create", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.4.create_with_grant", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.4.role", "all_without_grant_stay"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.4.usage", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.4.usage_with_grant", "false"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.5.create", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.5.create_with_grant", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.5.role", "policy_compose"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.5.usage", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.5.usage_with_grant", "false"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.6.create", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.6.create_with_grant", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.6.role", "policy_move"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.6.usage", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.6.usage_with_grant", "false"),
-				),
-			},
-			{
-				Config: testAccPostgresqlSchemaGrant2,
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlSchemaExists("postgresql_schema.test4", "test4"),
-					resource.TestCheckResourceAttr("postgresql_role.all_without_grant_stay", "name", "all_without_grant_stay"),
-					resource.TestCheckResourceAttr("postgresql_role.all_without_grant_drop", "name", "all_without_grant_drop"),
-					resource.TestCheckResourceAttr("postgresql_role.policy_compose", "name", "policy_compose"),
-					resource.TestCheckResourceAttr("postgresql_role.policy_move", "name", "policy_move"),
-
-					resource.TestCheckResourceAttr("postgresql_role.all_with_grantstay", "name", "all_with_grantstay"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "name", "test4"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "owner", "all_without_grant_stay"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.#", "6"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.0.create", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.0.create_with_grant", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.0.role", "all_with_grantstay"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.0.usage", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.0.usage_with_grant", "true"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.1.create", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.1.create_with_grant", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.1.role", "policy_compose"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.1.usage", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.1.usage_with_grant", "true"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.2.create", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.2.create_with_grant", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.2.role", "policy_move"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.2.usage", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.2.usage_with_grant", "true"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.3.create", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.3.create_with_grant", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.3.role", "all_without_grant_stay"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.3.usage", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.3.usage_with_grant", "false"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.4.create", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.4.create_with_grant", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.4.role", "policy_compose"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.4.usage", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.4.usage_with_grant", "false"),
-
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.5.create", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.5.create_with_grant", "false"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.5.role", "policy_new"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.5.usage", "true"),
-					resource.TestCheckResourceAttr("postgresql_schema.test4", "policy.5.usage_with_grant", "false"),
 				),
 			},
 		},
@@ -282,6 +139,100 @@ resource "postgresql_schema" "public" {
 	})
 }
 
+func TestAccPostgresqlSchema_Import(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	tfConfig := fmt.Sprintf(`
+resource "postgresql_schema" "import_schema" {
+  name     = "import_test_schema"
+  database = "%s"
+}
+`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.import_schema", "import_test_schema"),
+				),
+			},
+			{
+				ResourceName:      "postgresql_schema.import_schema",
+				ImportState:       true,
+				ImportStateVerify: true,
+				// if_not_exists and drop_cascade are local-only flags not stored in the database.
+				ImportStateVerifyIgnore: []string{"if_not_exists", "drop_cascade"},
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlSchema_OwnerChange(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	configCreate := fmt.Sprintf(`
+resource "postgresql_role" "owner_b" {
+  name = "schema_owner_b_%s"
+}
+
+resource "postgresql_schema" "owner_change" {
+  name     = "owner_change_schema"
+  database = "%s"
+  owner    = "%s"
+}
+`, dbSuffix, dbName, roleName)
+
+	configUpdate := fmt.Sprintf(`
+resource "postgresql_role" "owner_b" {
+  name = "schema_owner_b_%s"
+}
+
+resource "postgresql_schema" "owner_change" {
+  name     = "owner_change_schema"
+  database = "%s"
+  owner    = postgresql_role.owner_b.name
+}
+`, dbSuffix, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: configCreate,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.owner_change", "owner_change_schema"),
+					resource.TestCheckResourceAttr("postgresql_schema.owner_change", "owner", roleName),
+					testAccCheckSchemaOwner(dbName, "owner_change_schema", roleName),
+				),
+			},
+			{
+				Config: configUpdate,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.owner_change", "owner_change_schema"),
+					resource.TestCheckResourceAttr("postgresql_schema.owner_change", "owner", fmt.Sprintf("schema_owner_b_%s", dbSuffix)),
+					testAccCheckSchemaOwner(dbName, "owner_change_schema", fmt.Sprintf("schema_owner_b_%s", dbSuffix)),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 	client := testAccProvider.Meta().(*Client)
 
@@ -301,7 +252,18 @@ func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 		}
 		defer deferredRollback(txn)
 
-		exists, err := checkSchemaExists(txn, getExtensionNameFromID(rs.Primary.ID))
+		// Schema ID format is "database.schemaname"
+		parts := strings.Split(rs.Primary.ID, ".")
+		schemaName := parts[len(parts)-1]
+
+		// The public schema is never dropped (intentionally skipped in delete),
+		// so it will always exist — skip the check for it.
+		if schemaName == "public" {
+			_ = txn.Rollback()
+			continue
+		}
+
+		exists, err := checkSchemaExists(txn, schemaName)
 
 		if err != nil {
 			return fmt.Errorf("Error checking schema %s", err)
@@ -419,10 +381,6 @@ resource "postgresql_role" "role_all_without_grant" {
   login = true
 }
 
-resource "postgresql_role" "role_all_with_grant" {
-  name = "role_all_with_grant"
-}
-
 resource "postgresql_schema" "test1" {
   name = "foo"
 }
@@ -431,169 +389,11 @@ resource "postgresql_schema" "test2" {
   name = "bar"
   owner = "${postgresql_role.role_all_without_grant.name}"
   if_not_exists = false
-
-  policy {
-    create = true
-    usage = true
-    role = "${postgresql_role.role_all_without_grant.name}"
-  }
 }
 
 resource "postgresql_schema" "test3" {
   name = "baz"
   owner = "${postgresql_role.role_all_without_grant.name}"
   if_not_exists = true
-
-  policy {
-    create_with_grant = true
-    usage_with_grant = true
-    role = "${postgresql_role.role_all_with_grant.name}"
-  }
-
-  policy {
-    create = true
-    usage = true
-    role = "${postgresql_role.role_all_without_grant.name}"
-  }
-}
-`
-
-const testAccPostgresqlSchemaGrant1 = `
-resource "postgresql_role" "all_without_grant_stay" {
-  name = "all_without_grant_stay"
-}
-
-resource "postgresql_role" "all_without_grant_drop" {
-  name = "all_without_grant_drop"
-}
-
-resource "postgresql_role" "policy_compose" {
-  name = "policy_compose"
-}
-
-resource "postgresql_role" "policy_move" {
-  name = "policy_move"
-}
-
-resource "postgresql_role" "all_with_grantstay" {
-  name = "all_with_grantstay"
-}
-
-resource "postgresql_role" "all_with_grantdrop" {
-  name = "all_with_grantdrop"
-}
-
-resource "postgresql_schema" "test4" {
-  name = "test4"
-  owner = "${postgresql_role.all_without_grant_stay.name}"
-
-  policy {
-    create = true
-    usage = true
-    role = "${postgresql_role.all_without_grant_stay.name}"
-  }
-
-  policy {
-    create = true
-    usage = true
-    role = "${postgresql_role.all_without_grant_drop.name}"
-  }
-
-  policy {
-    create = true
-    usage = true
-    role = "${postgresql_role.policy_compose.name}"
-  }
-
-  policy {
-    create = true
-    usage = true
-    role = "${postgresql_role.policy_move.name}"
-  }
-
-  policy {
-    create_with_grant = true
-    usage_with_grant = true
-    role = "${postgresql_role.all_with_grantstay.name}"
-  }
-
-  policy {
-    create_with_grant = true
-    usage_with_grant = true
-    role = "${postgresql_role.all_with_grantdrop.name}"
-  }
-
-  policy {
-    create_with_grant = true
-    usage_with_grant = true
-    role = "${postgresql_role.policy_compose.name}"
-  }
-}
-`
-
-const testAccPostgresqlSchemaGrant2 = `
-resource "postgresql_role" "all_without_grant_stay" {
-  name = "all_without_grant_stay"
-}
-
-resource "postgresql_role" "all_without_grant_drop" {
-  name = "all_without_grant_drop"
-}
-
-resource "postgresql_role" "policy_compose" {
-  name = "policy_compose"
-}
-
-resource "postgresql_role" "policy_move" {
-  name = "policy_move"
-}
-
-resource "postgresql_role" "all_with_grantstay" {
-  name = "all_with_grantstay"
-}
-
-resource "postgresql_role" "policy_new" {
-  name = "policy_new"
-}
-
-resource "postgresql_schema" "test4" {
-  name = "test4"
-  owner = "${postgresql_role.all_without_grant_stay.name}"
-
-  policy {
-    create = true
-    usage = true
-    role = "${postgresql_role.all_without_grant_stay.name}"
-  }
-
-  policy {
-    create = true
-    usage = true
-    role = "${postgresql_role.policy_compose.name}"
-  }
-
-  policy {
-    create_with_grant = true
-    usage_with_grant = true
-    role = "${postgresql_role.all_with_grantstay.name}"
-  }
-
-  policy {
-    create_with_grant = true
-    usage_with_grant = true
-    role = "${postgresql_role.policy_compose.name}"
-  }
-
-  policy {
-    create_with_grant = true
-    usage_with_grant = true
-    role = "${postgresql_role.policy_move.name}"
-  }
-
-  policy {
-    create = true
-    usage = true
-    role = "${postgresql_role.policy_new.name}"
-  }
 }
 `

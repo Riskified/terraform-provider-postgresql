@@ -1,7 +1,6 @@
 package postgresql
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
 	"strings"
@@ -96,19 +95,7 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 		return nil
 	}
 
-	// CockroachDB does not support certain DDL operations within explicit transactions
-	// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
-	if db.dbType == dbTypeCockroachdb {
-		return readRoleDefaultPrivilegesWithDB(db, d)
-	}
-
-	txn, err := startTransaction(db.client, d.Get("database").(string))
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
-	return readRoleDefaultPrivileges(txn, d, db)
+	return readRoleDefaultPrivilegesWithDB(db, d)
 }
 
 func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.ResourceData) error {
@@ -133,67 +120,17 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 		return err
 	}
 
-	database := d.Get("database").(string)
-	owner := d.Get("owner").(string)
-
-	// CockroachDB does not support certain DDL operations within explicit transactions
-	// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
-	if db.dbType == dbTypeCockroachdb {
-		if err := revokeRoleDefaultPrivilegesWithDB(db, d); err != nil {
-			return err
-		}
-		if err := grantRoleDefaultPrivilegesWithDB(db, d); err != nil {
-			return err
-		}
-		d.SetId(generateDefaultPrivilegesID(d))
-		return readRoleDefaultPrivilegesWithDB(db, d)
-	}
-
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
+	if err := revokeRoleDefaultPrivilegesWithDB(db, d); err != nil {
 		return err
 	}
-	defer deferredRollback(txn)
-
-	if err := pgLockRole(txn, db, owner); err != nil {
+	if err := grantRoleDefaultPrivilegesWithDB(db, d); err != nil {
 		return err
 	}
-
-	// Needed in order to set the owner of the db if the connection user is not a superuser
-	if err := withRolesGranted(txn, []string{owner}, func() error {
-
-		// Revoke all privileges before granting otherwise reducing privileges will not work.
-		// We just have to revoke them in the same transaction so role will not lost his privileges
-		// between revoke and grant.
-		if err = revokeRoleDefaultPrivileges(txn, d); err != nil {
-			return err
-		}
-
-		if err = grantRoleDefaultPrivileges(txn, d); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	if err := txn.Commit(); err != nil {
-		return err
-	}
-
 	d.SetId(generateDefaultPrivilegesID(d))
-
-	txn, err = startTransaction(db.client, d.Get("database").(string))
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
-	return readRoleDefaultPrivileges(txn, d, db)
+	return readRoleDefaultPrivilegesWithDB(db, d)
 }
 
 func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.ResourceData) error {
-	owner := d.Get("owner").(string)
 	pgSchema := d.Get("schema").(string)
 	objectType := d.Get("object_type").(string)
 
@@ -204,172 +141,7 @@ func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.Resou
 		)
 	}
 
-	// CockroachDB does not support certain DDL operations within explicit transactions
-	// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
-	if db.dbType == dbTypeCockroachdb {
-		if err := revokeRoleDefaultPrivilegesWithDB(db, d); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	txn, err := startTransaction(db.client, d.Get("database").(string))
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
-	if err := pgLockRole(txn, db, owner); err != nil {
-		return err
-	}
-
-	// Needed in order to set the owner of the db if the connection user is not a superuser
-	if err := withRolesGranted(txn, []string{owner}, func() error {
-		return revokeRoleDefaultPrivileges(txn, d)
-	}); err != nil {
-		return err
-	}
-
-	if err := txn.Commit(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData, db *DBConnection) error {
-	role := d.Get("role").(string)
-	owner := d.Get("owner").(string)
-	pgSchema := d.Get("schema").(string)
-	objectType := d.Get("object_type").(string)
-	privilegesInput := d.Get("privileges").(*schema.Set).List()
-
-	if err := pgLockRole(txn, db, owner); err != nil {
-		return err
-	}
-
-	roleOID, err := getRoleOID(txn, role)
-	if err != nil {
-		return err
-	}
-
-	var query string
-	var queryArgs []interface{}
-	if !db.featureSupported(fetureAclExplode) {
-		var inSchema string
-		// If a schema is specified we need to build the part of the query string to action this
-		if pgSchema != "" {
-			inSchema = fmt.Sprintf("IN SCHEMA %s", pq.QuoteIdentifier(pgSchema))
-		}
-		query = fmt.Sprintf("with a as (show DEFAULT PRIVILEGES for role %s %s) select array_agg(privilege_type) from a where grantee = '%s' and object_type = '%ss';", owner, inSchema, role, objectType)
-	} else if pgSchema != "" {
-		query = `SELECT array_agg(prtype) FROM (
-		SELECT defaclnamespace, (aclexplode(defaclacl)).* FROM pg_default_acl
-		WHERE defaclobjtype = $3
-	) AS t (namespace, grantor_oid, grantee_oid, prtype, grantable)
-	JOIN pg_namespace ON pg_namespace.oid = namespace
-	WHERE grantee_oid = $1 AND nspname = $2 AND pg_get_userbyid(grantor_oid) = $4;
-`
-		queryArgs = []interface{}{roleOID, pgSchema, objectTypes[objectType], owner}
-	} else {
-		query = `SELECT array_agg(prtype) FROM (
-		SELECT defaclnamespace, (aclexplode(defaclacl)).* FROM pg_default_acl
-		WHERE defaclobjtype = $2
-	) AS t (namespace, grantor_oid, grantee_oid, prtype, grantable)
-	WHERE grantee_oid = $1 AND namespace = 0 AND pg_get_userbyid(grantor_oid) = $3;
-`
-		queryArgs = []interface{}{roleOID, objectTypes[objectType], owner}
-	}
-
-	// This query aggregates the list of default privileges type (prtype)
-	// for the role (grantee), owner (grantor), schema (namespace name)
-	// and the specified object type (defaclobjtype).
-	var privileges pq.ByteaArray
-
-	if err := txn.QueryRow(
-		query, queryArgs...,
-	).Scan(&privileges); err != nil {
-		return fmt.Errorf("could not read default privileges: %w", err)
-	}
-
-	// We consider no privileges as "not exists" unless no privileges were provided as input
-	if len(privileges) == 0 {
-		log.Printf("[DEBUG] no default privileges for role %s in schema %s", role, pgSchema)
-		if len(privilegesInput) != 0 {
-			d.SetId("")
-			return nil
-		}
-	}
-
-	privilegesSet := pgArrayToSet(privileges)
-	d.Set("privileges", privilegesSet)
-	d.SetId(generateDefaultPrivilegesID(d))
-
-	return nil
-}
-
-func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
-	role := d.Get("role").(string)
-	pgSchema := d.Get("schema").(string)
-
-	privileges := []string{}
-	for _, priv := range d.Get("privileges").(*schema.Set).List() {
-		privileges = append(privileges, priv.(string))
-	}
-
-	if len(privileges) == 0 {
-		log.Printf("[DEBUG] no default privileges to grant for role %s, owner %s in database: %s,", d.Get("role").(string), d.Get("owner").(string), d.Get("database").(string))
-		return nil
-	}
-
-	var inSchema string
-
-	// If a schema is specified we need to build the part of the query string to action this
-	if pgSchema != "" {
-		inSchema = fmt.Sprintf("IN SCHEMA %s", pq.QuoteIdentifier(pgSchema))
-	}
-
-	query := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s %s GRANT %s ON %sS TO %s",
-		pq.QuoteIdentifier(d.Get("owner").(string)),
-		inSchema,
-		strings.Join(privileges, ","),
-		strings.ToUpper(d.Get("object_type").(string)),
-		pq.QuoteIdentifier(role),
-	)
-
-	if d.Get("with_grant_option").(bool) {
-		query = query + " WITH GRANT OPTION"
-	}
-	_, err := txn.Exec(
-		query,
-	)
-	if err != nil {
-		return fmt.Errorf("could not alter default privileges: %w", err)
-	}
-
-	return nil
-}
-
-func revokeRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
-	pgSchema := d.Get("schema").(string)
-
-	var inSchema string
-
-	// If a schema is specified we need to build the part of the query string to action this
-	if pgSchema != "" {
-		inSchema = fmt.Sprintf("IN SCHEMA %s", pq.QuoteIdentifier(pgSchema))
-	}
-	query := fmt.Sprintf(
-		"ALTER DEFAULT PRIVILEGES FOR ROLE %s %s REVOKE ALL ON %sS FROM %s",
-		pq.QuoteIdentifier(d.Get("owner").(string)),
-		inSchema,
-		strings.ToUpper(d.Get("object_type").(string)),
-		pq.QuoteIdentifier(d.Get("role").(string)),
-	)
-	if _, err := txn.Exec(query); err != nil {
-		return fmt.Errorf("could not revoke default privileges: %w", err)
-	}
-	return nil
+	return revokeRoleDefaultPrivilegesWithDB(db, d)
 }
 
 func generateDefaultPrivilegesID(d *schema.ResourceData) string {
@@ -387,6 +159,12 @@ func generateDefaultPrivilegesID(d *schema.ResourceData) string {
 
 // grantRoleDefaultPrivilegesWithDB grants default privileges outside of a transaction for CockroachDB
 func grantRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error {
+	database := d.Get("database").(string)
+	db, err := connectToDatabase(db, database)
+	if err != nil {
+		return fmt.Errorf("could not connect to database %s: %w", database, err)
+	}
+
 	role := d.Get("role").(string)
 	pgSchema := d.Get("schema").(string)
 
@@ -418,8 +196,7 @@ func grantRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) 
 	if d.Get("with_grant_option").(bool) {
 		query = query + " WITH GRANT OPTION"
 	}
-	_, err := db.Exec(query)
-	if err != nil {
+	if _, err = db.Exec(query); err != nil {
 		return fmt.Errorf("could not alter default privileges: %w", err)
 	}
 
@@ -428,6 +205,12 @@ func grantRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) 
 
 // revokeRoleDefaultPrivilegesWithDB revokes default privileges outside of a transaction for CockroachDB
 func revokeRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error {
+	database := d.Get("database").(string)
+	db, err := connectToDatabase(db, database)
+	if err != nil {
+		return fmt.Errorf("could not connect to database %s: %w", database, err)
+	}
+
 	pgSchema := d.Get("schema").(string)
 
 	var inSchema string
@@ -451,6 +234,12 @@ func revokeRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData)
 
 // readRoleDefaultPrivilegesWithDB reads default privileges outside of a transaction for CockroachDB
 func readRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error {
+	database := d.Get("database").(string)
+	db, err := connectToDatabase(db, database)
+	if err != nil {
+		return fmt.Errorf("could not connect to database %s: %w", database, err)
+	}
+
 	role := d.Get("role").(string)
 	owner := d.Get("owner").(string)
 	pgSchema := d.Get("schema").(string)
@@ -463,8 +252,15 @@ func readRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) e
 	if pgSchema != "" {
 		inSchema = fmt.Sprintf("IN SCHEMA %s", pq.QuoteIdentifier(pgSchema))
 	}
-	// CockroachDB uses SHOW DEFAULT PRIVILEGES instead of aclexplode
-	query = fmt.Sprintf("with a as (show DEFAULT PRIVILEGES for role %s %s) select array_agg(privilege_type) from a where grantee = '%s' and object_type = '%ss';", owner, inSchema, role, objectType)
+	// CockroachDB uses SHOW DEFAULT PRIVILEGES instead of aclexplode.
+	// For functions, CRDB may return object_type = 'functions' or 'routines' depending on version.
+	var objectTypeClause string
+	if objectType == "function" {
+		objectTypeClause = "object_type IN ('functions', 'routines')"
+	} else {
+		objectTypeClause = fmt.Sprintf("object_type = '%ss'", objectType)
+	}
+	query = fmt.Sprintf("with a as (show DEFAULT PRIVILEGES for role %s %s) select array_agg(privilege_type) from a where grantee = '%s' and %s;", owner, inSchema, role, objectTypeClause)
 
 	var privileges pq.ByteaArray
 	if err := db.QueryRow(query).Scan(&privileges); err != nil {

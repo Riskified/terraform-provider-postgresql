@@ -14,7 +14,6 @@ type PGFunction struct {
 	Language        string
 	Body            string
 	Args            []PGFunctionArg
-	Parallel        string
 	SecurityDefiner bool
 	Strict          bool
 	Volatility      string
@@ -45,11 +44,6 @@ func (pgFunction *PGFunction) FromResourceData(d *schema.ResourceData) error {
 	pgFunction.Body = normalizeFunctionBody(d.Get(funcBodyAttr).(string))
 	pgFunction.Args = []PGFunctionArg{}
 
-	if v, ok := d.GetOk(funcParallelAttr); ok {
-		pgFunction.Parallel = v.(string)
-	} else {
-		pgFunction.Parallel = defaultFunctionParallel
-	}
 	if v, ok := d.GetOk(funcStrictAttr); ok {
 		pgFunction.Strict = v.(bool)
 	} else {
@@ -112,7 +106,7 @@ func (pgFunction *PGFunction) FromResourceData(d *schema.ResourceData) error {
 func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 
 	pgFunctionData := findStringSubmatchMap(
-		`(?si)CREATE\sOR\sREPLACE\sFUNCTION\s(?P<Schema>[^.]+)\.(?P<Name>[^(]+)\((?P<Args>.*)\).*RETURNS\s(?P<Returns>[^\n]+).*LANGUAGE\s(?P<Language>[^\n\s]+)\s*(?P<Volatility>(STABLE|IMMUTABLE)?)\s*(?P<Parallel>(PARALLEL (SAFE|RESTRICTED))?)\s*(?P<Strict>(STRICT)?)\s*(?P<Security>(SECURITY DEFINER)?).*\$[a-zA-Z]*\$(?P<Body>.*)\$[a-zA-Z]*\$`,
+		`(?si)CREATE(\sOR\sREPLACE)?\sFUNCTION\s(?P<Schema>[^.]+)\.(?P<Name>[^(]+)\((?P<Args>.*)\).*RETURNS\s(?P<Returns>[^\n]+).*LANGUAGE\s(?P<Language>[^\n\s]+)\s*(?P<Volatility>(STABLE|IMMUTABLE)?)\s*(?P<Strict>(STRICT)?)\s*(?P<Security>(SECURITY DEFINER)?).*\$[a-zA-Z]*\$(?P<Body>.*)\$[a-zA-Z]*\$`,
 		functionDefinition,
 	)
 
@@ -140,15 +134,32 @@ func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 	pgFunction.Args = args
 	pgFunction.SecurityDefiner = len(pgFunctionData["Security"]) > 0
 	pgFunction.Strict = len(pgFunctionData["Strict"]) > 0
+	if !pgFunction.Strict {
+		// CRDB emits null-call behavior before LANGUAGE; scan the header (before first $) separately.
+		header := functionDefinition
+		if dollarIdx := strings.Index(functionDefinition, "$"); dollarIdx >= 0 {
+			header = functionDefinition[:dollarIdx]
+		}
+		upperHeader := strings.ToUpper(header)
+		pgFunction.Strict = strings.Contains(upperHeader, "RETURNS NULL ON NULL INPUT") ||
+			strings.Contains(upperHeader, "STRICT")
+	}
 	if len(pgFunctionData["Volatility"]) == 0 {
+		// CRDB emits IMMUTABLE/STABLE before LANGUAGE; scan the header (before first $) separately.
 		pgFunction.Volatility = defaultFunctionVolatility
+		dollarIdx := strings.Index(functionDefinition, "$")
+		header := functionDefinition
+		if dollarIdx >= 0 {
+			header = functionDefinition[:dollarIdx]
+		}
+		upperHeader := strings.ToUpper(header)
+		if strings.Contains(upperHeader, "IMMUTABLE") {
+			pgFunction.Volatility = "IMMUTABLE"
+		} else if strings.Contains(upperHeader, "STABLE") {
+			pgFunction.Volatility = "STABLE"
+		}
 	} else {
 		pgFunction.Volatility = pgFunctionData["Volatility"]
-	}
-	if len(pgFunctionData["Parallel"]) == 0 {
-		pgFunction.Parallel = defaultFunctionParallel
-	} else {
-		pgFunction.Parallel = strings.TrimPrefix(pgFunctionData["Parallel"], "PARALLEL ")
 	}
 
 	return nil
@@ -182,4 +193,16 @@ func normalizeFunctionBody(body string) string {
 		return newBody
 	}
 	return body
+}
+
+func normalizeFunctionBodyForCompare(body string) string {
+	lines := strings.Split(body, "\n")
+	var normalized []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	return strings.Join(normalized, "\n")
 }

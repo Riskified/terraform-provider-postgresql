@@ -1,7 +1,7 @@
-Terraform Provider for PostgreSQL with CockroachDB compatibility
+Terraform Provider for CockroachDB
 =================================
 
-This provider allows to manage with Terraform [Postgresql](https://www.postgresql.org/) objects like databases, extensions, roles, etc..
+This provider allows managing CockroachDB objects like databases, schemas, roles, grants, and functions with Terraform.
 
 - Documentation: https://registry.terraform.io/providers/Riskified/postgresql/latest/docs
 
