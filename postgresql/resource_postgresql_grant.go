@@ -130,11 +130,8 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 }
 
 func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) error {
-	if err := validateFeatureSupport(db, d); err != nil {
-		return fmt.Errorf("feature is not supported: %v", err)
-	}
-
-	// Validate parameters.
+	// Validate parameters first (DB-agnostic), so validation errors are reported
+	// regardless of DB type/version.
 	objectType := d.Get("object_type").(string)
 	if d.Get("schema").(string) == "" && !sliceContainsStr([]string{"database", "foreign_data_wrapper", "foreign_server"}, objectType) {
 		return fmt.Errorf("parameter 'schema' is mandatory for postgresql_grant resource")
@@ -161,16 +158,15 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 		return err
 	}
 
+	if err := validateFeatureSupport(db, d); err != nil {
+		return fmt.Errorf("feature is not supported: %v", err)
+	}
+
 	database := d.Get("database").(string)
 
 	// CockroachDB does not support certain DDL operations within explicit transactions
 	if db.dbType == dbTypeCockroachdb {
-		// For CockroachDB, we need to connect to the correct database first
-		dbClient := db.client
-		if database != "" && database != dbClient.databaseName {
-			dbClient = dbClient.config.NewClient(database)
-		}
-		dbConn, err := dbClient.Connect()
+		dbConn, err := connectToDatabase(db, database)
 		if err != nil {
 			return err
 		}
@@ -254,12 +250,7 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 
 	// CockroachDB does not support certain DDL operations within explicit transactions
 	if db.dbType == dbTypeCockroachdb {
-		// For CockroachDB, we need to connect to the correct database first
-		dbClient := db.client
-		if database != "" && database != dbClient.databaseName {
-			dbClient = dbClient.config.NewClient(database)
-		}
-		dbConn, err := dbClient.Connect()
+		dbConn, err := connectToDatabase(db, database)
 		if err != nil {
 			return err
 		}
@@ -519,7 +510,18 @@ func readRolePrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData) e
 		return readForeignServerRolePrivileges(txn, d, roleOID)
 
 	case "function", "procedure", "routine":
-		query = `
+		if !db.featureSupported(fetureAclExplode) {
+			// CockroachDB: pg_proc.proacl is always NULL; use information_schema instead
+			query = fmt.Sprintf(
+				`SELECT routine_name, array_agg(privilege_type)
+FROM information_schema.role_routine_grants
+WHERE routine_schema = '%s'
+AND grantee = '%s'
+GROUP BY routine_name`,
+				d.Get("schema"), role)
+			rows, err = txn.Query(query)
+		} else {
+			query = `
 SELECT pg_proc.proname, array_remove(array_agg(privilege_type), NULL)
 FROM pg_proc
 JOIN pg_namespace ON pg_namespace.oid = pg_proc.pronamespace
@@ -534,9 +536,10 @@ USING (proname, pronamespace)
       WHERE nspname = $2
 GROUP BY pg_proc.proname
 `
-		rows, err = txn.Query(
-			query, roleOID, d.Get("schema"),
-		)
+			rows, err = txn.Query(
+				query, roleOID, d.Get("schema"),
+			)
+		}
 
 	case "column":
 		return readColumnRolePrivileges(txn, d)
@@ -964,6 +967,18 @@ func validateFeatureSupport(db *DBConnection, d *schema.ResourceData) error {
 		return fmt.Errorf(
 			"privelege type System is not supported for this version (%s)",
 			db.version,
+		)
+	}
+	if d.Get("object_type") == "column" && !db.featureSupported(featureColumnPrivileges) {
+		return fmt.Errorf(
+			"object type COLUMN is not supported for this version (%s)",
+			db.version,
+		)
+	}
+	if (d.Get("object_type") == "foreign_data_wrapper" || d.Get("object_type") == "foreign_server") && !db.featureSupported(featureForeignDataWrapper) {
+		return fmt.Errorf(
+			"object type %s is not supported for this version (%s)",
+			d.Get("object_type"), db.version,
 		)
 	}
 	return nil

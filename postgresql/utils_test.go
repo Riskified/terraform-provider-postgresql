@@ -68,6 +68,32 @@ func skipIfNotAcc(t *testing.T) {
 	}
 }
 
+// skipIfNotPostgres skips the test if the connected database is not standard PostgreSQL
+// (i.e. it is CockroachDB). Use this for tests that cover features absent in CockroachDB
+// such as extensions, replication slots, publications, subscriptions, and FDW.
+func skipIfNotPostgres(t *testing.T) {
+	client := testAccProvider.Meta().(*Client)
+	db, err := client.Connect()
+	if err != nil {
+		t.Fatalf("could not connect to database: %v", err)
+	}
+	if db.dbType == dbTypeCockroachdb {
+		t.Skip("Skip test: This test is not supported on CockroachDB")
+	}
+}
+
+// skipIfNotCockroachDB skips the test if the connected database is not CockroachDB.
+func skipIfNotCockroachDB(t *testing.T) {
+	client := testAccProvider.Meta().(*Client)
+	db, err := client.Connect()
+	if err != nil {
+		t.Fatalf("could not connect to database: %v", err)
+	}
+	if db.dbType != dbTypeCockroachdb {
+		t.Skip("Skip test: This test can only run on CockroachDB")
+	}
+}
+
 // Skip tests on RDS like environments
 func skipIfNotSuperuser(t *testing.T) {
 	if os.Getenv("PGSUPERUSER") == "false" {
@@ -391,12 +417,37 @@ func testCheckTablesPrivileges(t *testing.T, dbName, roleName string, tables []s
 }
 
 func testCheckSchemasPrivileges(t *testing.T, dbName, roleName string, schemas []string, allowedPrivileges []string) error {
+	// Create a probe table in each schema as admin and grant SELECT on it to the test role.
+	// This lets us test USAGE by attempting SELECT: schema USAGE is enforced as an outer gate
+	// on both PostgreSQL and CockroachDB, even when table-level SELECT is granted.
+	// (Unlike DROP TABLE IF EXISTS, which CRDB silently allows on non-existent tables regardless of USAGE.)
+	config := getTestConfig(t)
+	adminDB, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		return fmt.Errorf("could not open admin connection for %s: %w", dbName, err)
+	}
+	defer adminDB.Close()
+
+	for _, schema := range schemas {
+		if _, err := adminDB.Exec(fmt.Sprintf("CREATE TABLE %s.usage_probe()", schema)); err != nil {
+			return fmt.Errorf("could not create usage probe table in %s: %w", schema, err)
+		}
+		if _, err := adminDB.Exec(fmt.Sprintf("GRANT SELECT ON %s.usage_probe TO %s", schema, roleName)); err != nil {
+			return fmt.Errorf("could not grant SELECT on probe table in %s: %w", schema, err)
+		}
+	}
+	defer func() {
+		for _, schema := range schemas {
+			_, _ = adminDB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.usage_probe", schema))
+		}
+	}()
+
 	db := connectAsTestRole(t, roleName, dbName)
 	defer db.Close()
 
 	for _, schema := range schemas {
 		queries := map[string]string{
-			"USAGE":  fmt.Sprintf("DROP TABLE IF EXISTS %s.test_table", schema),
+			"USAGE":  fmt.Sprintf("SELECT 1 FROM %s.usage_probe LIMIT 0", schema),
 			"CREATE": fmt.Sprintf("CREATE TABLE %s.test_table()", schema),
 		}
 

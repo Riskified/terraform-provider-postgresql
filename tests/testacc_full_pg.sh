@@ -8,7 +8,7 @@ log() {
 }
 
 setup() {
-    "$(pwd)"/tests/testacc_setup.sh
+    "$(pwd)"/tests/testacc_setup_pg.sh
 }
 
 run() {
@@ -19,13 +19,13 @@ run() {
 }
 
 cleanup() {
-    "$(pwd)"/tests/testacc_cleanup.sh
+    "$(pwd)"/tests/testacc_cleanup_pg.sh
 }
 
 run_suite() {
     suite=${1?}
     log "setup ($1)" && setup
-    source "./tests/switch_$suite.sh"
+    source "./tests/switch_${suite}_pg.sh"
     log "run ($1)" && run || (log "cleanup" && cleanup && exit 1)
     log "cleanup ($1)" && cleanup
 }

@@ -2,7 +2,7 @@
 
 HERE=$(dirname $(readlink -f ${BASH_SOURCE:-${(%):-%N}}))
 
-source "$HERE/switch_superuser.sh"
+source "$HERE/switch_superuser_pg.sh"
 
 echo "Switching to an RDS-like environment"
 psql -d postgres  > /dev/null <<EOS

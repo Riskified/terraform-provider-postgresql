@@ -323,34 +323,40 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		}
 	}
 
-	if err = grantRoles(txn, d); err != nil {
+	// CockroachDB does not support DDL in explicit transactions; run ALTER helpers directly on db.
+	var exec QueryAble = txn
+	if db.dbType == dbTypeCockroachdb {
+		exec = db
+	}
+
+	if err = grantRoles(exec, d); err != nil {
 		return err
 	}
 
-	if err = alterSearchPath(txn, d); err != nil {
+	if err = alterSearchPath(exec, d); err != nil {
 		return err
 	}
 
-	if err = setStatementTimeout(txn, d); err != nil {
+	if err = setStatementTimeout(exec, d); err != nil {
 		return err
 	}
 
-	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
+	if err = setIdleInTransactionSessionTimeout(exec, d); err != nil {
 		return err
 	}
 
-	if err = setAssumeRole(txn, d); err != nil {
+	if err = setAssumeRole(exec, d); err != nil {
 		return err
 	}
 
 	if db.featureSupported(featureTransactionIsolation) {
-		if err = setDefaultTransactionIsolation(txn, d); err != nil {
+		if err = setDefaultTransactionIsolation(exec, d); err != nil {
 			return err
 		}
 	}
 
 	if db.featureSupported(featureFollowerReads) {
-		if err = setDefaultFollowerReads(txn, d); err != nil {
+		if err = setDefaultFollowerReads(exec, d); err != nil {
 			return err
 		}
 	}
@@ -381,25 +387,29 @@ func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if !d.Get(roleSkipReassignOwnedAttr).(bool) {
-		if err := withRolesGranted(txn, []string{roleName}, func() error {
+		// CockroachDB: all DDL must run outside explicit transactions to avoid
+		// schema-change job conflicts between the open txn and the external DDL connection.
+		if db.dbType == dbTypeCockroachdb {
 			currentUser := db.client.config.getDatabaseUsername()
-			if _, err := txn.Exec(fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(currentUser))); err != nil {
+			if _, err := db.Exec(fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(currentUser))); err != nil {
 				return fmt.Errorf("could not reassign owned by role %s to %s: %w", roleName, currentUser, err)
 			}
-			//cockroach does not support schema changes within explicit transactions
-			// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
-			if db.dbType == dbTypeCockroachdb {
-				if _, err := db.Exec(fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(roleName))); err != nil {
-					return fmt.Errorf("could not drop owned by role %s: %w", roleName, err)
+			if _, err := db.Exec(fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(roleName))); err != nil {
+				return fmt.Errorf("could not drop owned by role %s: %w", roleName, err)
+			}
+		} else {
+			if err := withRolesGranted(txn, []string{roleName}, func() error {
+				currentUser := db.client.config.getDatabaseUsername()
+				if _, err := txn.Exec(fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(currentUser))); err != nil {
+					return fmt.Errorf("could not reassign owned by role %s to %s: %w", roleName, currentUser, err)
 				}
-			} else {
 				if _, err := txn.Exec(fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(roleName))); err != nil {
 					return fmt.Errorf("could not drop owned by role %s: %w", roleName, err)
 				}
+				return nil
+			}); err != nil {
+				return err
 			}
-			return nil
-		}); err != nil {
-			return err
 		}
 	}
 	if !d.Get(roleSkipDropRoleAttr).(bool) {
@@ -517,6 +527,12 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleSkipDropRoleAttr, d.Get(roleSkipDropRoleAttr).(bool))
 	d.Set(roleSkipReassignOwnedAttr, d.Get(roleSkipReassignOwnedAttr).(bool))
 	d.Set(roleSuperuserAttr, roleSuperuser)
+	// CockroachDB stores VALID UNTIL 'infinity' as '294276-12-31 23:59:59' due to a bug.
+	// Normalize it back to "infinity" so the state matches the config default.
+	// https://github.com/cockroachdb/cockroach/issues/116714
+	if db.dbType == dbTypeCockroachdb && strings.HasPrefix(roleValidUntil, "294276-12-31 23:59:59") {
+		roleValidUntil = "infinity"
+	}
 	d.Set(roleValidUntilAttr, roleValidUntil)
 	d.Set(roleReplicationAttr, roleReplication)
 	d.Set(roleBypassRLSAttr, roleBypassRLS)
@@ -797,39 +813,45 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
+	// CockroachDB does not support DDL in explicit transactions; run ALTER helpers directly on db.
+	var exec QueryAble = txn
+	if db.dbType == dbTypeCockroachdb {
+		exec = db
+	}
+
 	// applying roles: let's revoke all / grant the right ones
-	if err = revokeRoles(txn, d); err != nil {
+	if err = revokeRoles(exec, d); err != nil {
 		return err
 	}
 
-	if err = grantRoles(txn, d); err != nil {
+	if err = grantRoles(exec, d); err != nil {
 		return err
 	}
 
-	if err = alterSearchPath(txn, d); err != nil {
+	if err = alterSearchPath(exec, d); err != nil {
 		return err
 	}
 
-	if err = setStatementTimeout(txn, d); err != nil {
+	if err = setStatementTimeout(exec, d); err != nil {
 		return err
 	}
 
-	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
+	if err = setIdleInTransactionSessionTimeout(exec, d); err != nil {
 		return err
 	}
 
-	if err = setAssumeRole(txn, d); err != nil {
+	if err = setAssumeRole(exec, d); err != nil {
 		return err
 	}
 
 	if db.featureSupported(featureTransactionIsolation) {
-		if err = setDefaultTransactionIsolation(txn, d); err != nil {
+		if err = setDefaultTransactionIsolation(exec, d); err != nil {
 			return err
 		}
 	}
 
 	if db.featureSupported(featureFollowerReads) {
-		if err = setDefaultFollowerReads(txn, d); err != nil {
+		if err = setDefaultFollowerReads(exec, d); err != nil {
 			return err
 		}
 	}
@@ -1058,7 +1080,7 @@ func setRoleValidUntil(txn *sql.Tx, d *schema.ResourceData, db *DBConnection) er
 	return nil
 }
 
-func revokeRoles(txn *sql.Tx, d *schema.ResourceData) error {
+func revokeRoles(db QueryAble, d *schema.ResourceData) error {
 	role := d.Get(roleNameAttr).(string)
 
 	query := `SELECT pg_get_userbyid(roleid)
@@ -1066,7 +1088,7 @@ func revokeRoles(txn *sql.Tx, d *schema.ResourceData) error {
 		JOIN pg_catalog.pg_roles ON members.member = pg_roles.oid
 		WHERE rolname = $1`
 
-	rows, err := txn.Query(query, role)
+	rows, err := db.Query(query, role)
 	if err != nil {
 		return fmt.Errorf("could not get roles list for role %s: %w", role, err)
 	}
@@ -1089,7 +1111,7 @@ func revokeRoles(txn *sql.Tx, d *schema.ResourceData) error {
 		query = fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(grantedRole), pq.QuoteIdentifier(role))
 
 		log.Printf("[DEBUG] revoking role %s from %s", grantedRole, role)
-		if _, err := txn.Exec(query); err != nil {
+		if _, err := db.Exec(query); err != nil {
 			return fmt.Errorf("could not revoke role %s from %s: %w", string(grantedRole), role, err)
 		}
 	}
@@ -1097,21 +1119,21 @@ func revokeRoles(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func grantRoles(txn *sql.Tx, d *schema.ResourceData) error {
+func grantRoles(db QueryAble, d *schema.ResourceData) error {
 	role := d.Get(roleNameAttr).(string)
 
 	for _, grantingRole := range d.Get("roles").(*schema.Set).List() {
 		query := fmt.Sprintf(
 			"GRANT %s TO %s", pq.QuoteIdentifier(grantingRole.(string)), pq.QuoteIdentifier(role),
 		)
-		if _, err := txn.Exec(query); err != nil {
+		if _, err := db.Exec(query); err != nil {
 			return fmt.Errorf("could not grant role %s to %s: %w", grantingRole, role, err)
 		}
 	}
 	return nil
 }
 
-func alterSearchPath(txn *sql.Tx, d *schema.ResourceData) error {
+func alterSearchPath(db QueryAble, d *schema.ResourceData) error {
 	role := d.Get(roleNameAttr).(string)
 	searchPathInterface := d.Get(roleSearchPathAttr).([]interface{})
 
@@ -1132,13 +1154,13 @@ func alterSearchPath(txn *sql.Tx, d *schema.ResourceData) error {
 	query := fmt.Sprintf(
 		"ALTER ROLE %s SET search_path TO %s", pq.QuoteIdentifier(role), searchPath,
 	)
-	if _, err := txn.Exec(query); err != nil {
+	if _, err := db.Exec(query); err != nil {
 		return fmt.Errorf("could not set search_path %s for %s: %w", searchPath, role, err)
 	}
 	return nil
 }
 
-func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
+func setStatementTimeout(db QueryAble, d *schema.ResourceData) error {
 	if !d.HasChange(roleStatementTimeoutAttr) {
 		return nil
 	}
@@ -1149,21 +1171,21 @@ func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s SET statement_timeout TO %d", pq.QuoteIdentifier(roleName), statementTimeout,
 		)
-		if _, err := txn.Exec(sql); err != nil {
+		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("could not set statement_timeout %d for %s: %w", statementTimeout, roleName, err)
 		}
 	} else {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s RESET statement_timeout", pq.QuoteIdentifier(roleName),
 		)
-		if _, err := txn.Exec(sql); err != nil {
+		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset statement_timeout for %s: %w", roleName, err)
 		}
 	}
 	return nil
 }
 
-func setIdleInTransactionSessionTimeout(txn *sql.Tx, d *schema.ResourceData) error {
+func setIdleInTransactionSessionTimeout(db QueryAble, d *schema.ResourceData) error {
 	if !d.HasChange(roleIdleInTransactionSessionTimeoutAttr) {
 		return nil
 	}
@@ -1174,21 +1196,21 @@ func setIdleInTransactionSessionTimeout(txn *sql.Tx, d *schema.ResourceData) err
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s SET idle_in_transaction_session_timeout TO %d", pq.QuoteIdentifier(roleName), idleInTransactionSessionTimeout,
 		)
-		if _, err := txn.Exec(sql); err != nil {
+		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("could not set idle_in_transaction_session_timeout %d for %s: %w", idleInTransactionSessionTimeout, roleName, err)
 		}
 	} else {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s RESET idle_in_transaction_session_timeout", pq.QuoteIdentifier(roleName),
 		)
-		if _, err := txn.Exec(sql); err != nil {
+		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset idle_in_transaction_session_timeout for %s: %w", roleName, err)
 		}
 	}
 	return nil
 }
 
-func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
+func setAssumeRole(db QueryAble, d *schema.ResourceData) error {
 	if !d.HasChange(roleAssumeRoleAttr) {
 		return nil
 	}
@@ -1199,21 +1221,21 @@ func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s SET ROLE TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(assumeRole),
 		)
-		if _, err := txn.Exec(sql); err != nil {
+		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("could not set role %s for %s: %w", assumeRole, roleName, err)
 		}
 	} else {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s RESET ROLE", pq.QuoteIdentifier(roleName),
 		)
-		if _, err := txn.Exec(sql); err != nil {
+		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset role for %s: %w", roleName, err)
 		}
 	}
 	return nil
 }
 
-func setDefaultTransactionIsolation(txn *sql.Tx, d *schema.ResourceData) error {
+func setDefaultTransactionIsolation(db QueryAble, d *schema.ResourceData) error {
 	if !d.HasChange(defaultTransactionIsolationAttr) {
 		return nil
 	}
@@ -1224,21 +1246,21 @@ func setDefaultTransactionIsolation(txn *sql.Tx, d *schema.ResourceData) error {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s SET default_transaction_isolation = %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(defaultTransactionIsolation),
 		)
-		if _, err := txn.Exec(sql); err != nil {
+		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("could not set default_transaction_isolation %s for %s: %w", defaultTransactionIsolation, roleName, err)
 		}
 	} else {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s RESET default_transaction_isolation", pq.QuoteIdentifier(roleName),
 		)
-		if _, err := txn.Exec(sql); err != nil {
+		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset default_transaction_isolation for %s: %w", roleName, err)
 		}
 	}
 	return nil
 }
 
-func setDefaultFollowerReads(txn *sql.Tx, d *schema.ResourceData) error {
+func setDefaultFollowerReads(db QueryAble, d *schema.ResourceData) error {
 	if !d.HasChange(defaultTransactionFollowerReadsAttr) {
 		return nil
 	}
@@ -1249,14 +1271,14 @@ func setDefaultFollowerReads(txn *sql.Tx, d *schema.ResourceData) error {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s SET default_transaction_use_follower_reads = %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(defaultFollowerReads),
 		)
-		if _, err := txn.Exec(sql); err != nil {
+		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("could not set default_transaction_use_follower_reads %s for %s: %w", defaultFollowerReads, roleName, err)
 		}
 	} else {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s RESET default_transaction_use_follower_reads", pq.QuoteIdentifier(roleName),
 		)
-		if _, err := txn.Exec(sql); err != nil {
+		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset default_transaction_use_follower_reads for %s: %w", roleName, err)
 		}
 	}

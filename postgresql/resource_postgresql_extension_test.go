@@ -13,6 +13,7 @@ func TestAccPostgresqlExtension_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureExtension)
 			// TODO: Need to check how RDS manage to allow `rds_supuser` to create extension
 			// even it's not a real superuser
@@ -118,6 +119,7 @@ func TestAccPostgresqlExtension_SchemaRename(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureExtension)
 			testSuperuserPreCheck(t)
 		},
@@ -185,6 +187,7 @@ func TestAccPostgresqlExtension_Database(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureExtension)
 			testSuperuserPreCheck(t)
 		},
@@ -221,6 +224,7 @@ resource "postgresql_extension" "cascade" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureExtension)
 			testSuperuserPreCheck(t)
 		},
@@ -270,6 +274,7 @@ resource "postgresql_extension" "cascade" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureExtension)
 			testSuperuserPreCheck(t)
 		},

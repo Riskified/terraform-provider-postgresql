@@ -331,6 +331,18 @@ func setToPgIdentSimpleList(idents *schema.Set) string {
 	return strings.Join(quotedIdents, ",")
 }
 
+// connectToDatabase returns a DBConnection for the specified database.
+// If the current connection is already on the target database, it is returned as-is.
+// Otherwise a new connection (from the shared registry) is created for that database.
+// This mirrors what startTransaction does for the PostgreSQL path, but without a
+// transaction — needed for CockroachDB which does not support DDL inside explicit transactions.
+func connectToDatabase(db *DBConnection, database string) (*DBConnection, error) {
+	if database == "" || database == db.client.databaseName {
+		return db, nil
+	}
+	return db.client.config.NewClient(database).Connect()
+}
+
 // startTransaction starts a new DB transaction on the specified database.
 // If the database is specified and different from the one configured in the provider,
 // it will create a new connection pool if needed.

@@ -18,6 +18,7 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featureRoleroleInherit)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
@@ -79,6 +80,7 @@ resource "postgresql_role" "role_with_superuser" {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, fetureRoleSuperuser)
 			// Need to a be a superuser to create a superuser
 			testSuperuserPreCheck(t)
 		},
@@ -128,6 +130,7 @@ resource "postgresql_role" "update_role" {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featureRoleRename)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
@@ -196,9 +199,33 @@ resource "postgresql_role" "update_role" {
 // There were a bug on RDS like setup (with a non-superuser postgres role)
 // where it couldn't delete the role in this case.
 func TestAccPostgresqlRole_AdminGranted(t *testing.T) {
+	skipIfNotAcc(t)
+	// Configure provider early so we can detect DB type before building test config.
+	testAccPreCheck(t)
+
 	admin := os.Getenv("PGUSER")
 	if admin == "" {
 		admin = "postgres"
+	}
+
+	// CockroachDB requires the granting user to have ADMIN OPTION on the role being granted.
+	// The current user doesn't have ADMIN OPTION on its own user role, so create a fresh
+	// helper role that the current user does have ADMIN OPTION on (creator always gets it).
+	client := testAccProvider.Meta().(*Client)
+	db, err := client.Connect()
+	if err != nil {
+		t.Fatalf("could not connect to database: %v", err)
+	}
+	if db.dbType == dbTypeCockroachdb {
+		helperRole := "test_admin_grant_helper"
+		if _, err := db.Exec(fmt.Sprintf(`CREATE ROLE "%s"`, helperRole)); err != nil {
+			t.Fatalf("could not create helper role: %v", err)
+		}
+		defer func() { _, _ = db.Exec(fmt.Sprintf(`DROP ROLE IF EXISTS "%s"`, helperRole)) }()
+		if _, err := db.Exec(fmt.Sprintf(`GRANT "%s" TO "%s" WITH ADMIN OPTION`, helperRole, admin)); err != nil {
+			t.Fatalf("could not grant admin option on helper role: %v", err)
+		}
+		admin = helperRole
 	}
 
 	roleConfig := fmt.Sprintf(`

@@ -410,6 +410,7 @@ func TestAccPostgresqlGrantColumns(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featureColumnPrivileges)
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
@@ -1152,6 +1153,7 @@ resource "postgresql_role" "test" {
 resource "postgresql_schema" "test_schema" {
 	depends_on   = [postgresql_role.test]
 	name         = "test_schema"
+	database     = "postgres"
 	drop_cascade = true
 }
 
@@ -1202,6 +1204,9 @@ resource "postgresql_grant" "test" {
 func TestAccPostgresqlGrantForeignDataWrapper(t *testing.T) {
 	skipIfNotAcc(t)
 	skipIfNotSuperuser(t)
+	// Configure provider and skip early, before any setup that would fail on CRDB
+	testAccPreCheck(t)
+	testCheckCompatibleVersion(t, featureForeignDataWrapper)
 
 	config := getTestConfig(t)
 	dsn := config.connStr("postgres")
@@ -1238,6 +1243,7 @@ resource "postgresql_grant" "test" {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featureForeignDataWrapper)
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
@@ -1266,6 +1272,9 @@ resource "postgresql_grant" "test" {
 func TestAccPostgresqlGrantForeignServer(t *testing.T) {
 	skipIfNotAcc(t)
 	skipIfNotSuperuser(t)
+	// Configure provider and skip early, before any setup that would fail on CRDB
+	testAccPreCheck(t)
+	testCheckCompatibleVersion(t, featureForeignDataWrapper)
 
 	config := getTestConfig(t)
 	dsn := config.connStr("postgres")
@@ -1312,6 +1321,7 @@ resource "postgresql_grant" "test" {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featureForeignDataWrapper)
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{

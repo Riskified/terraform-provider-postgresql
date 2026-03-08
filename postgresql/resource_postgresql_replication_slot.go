@@ -43,6 +43,9 @@ func resourcePostgreSQLReplicationSlot() *schema.Resource {
 }
 
 func resourcePostgreSQLReplicationSlotCreate(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureReplication) {
+		return fmt.Errorf("postgresql_replication_slot resource is not supported for this version (%s)", db.version)
+	}
 
 	name := d.Get("name").(string)
 	plugin := d.Get("plugin").(string)
@@ -69,6 +72,9 @@ func resourcePostgreSQLReplicationSlotCreate(db *DBConnection, d *schema.Resourc
 }
 
 func resourcePostgreSQLReplicationSlotExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
+	if !db.featureSupported(featureReplication) {
+		return false, nil
+	}
 
 	var ReplicationSlotName string
 
@@ -102,6 +108,9 @@ func resourcePostgreSQLReplicationSlotExists(db *DBConnection, d *schema.Resourc
 }
 
 func resourcePostgreSQLReplicationSlotRead(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureReplication) {
+		return fmt.Errorf("postgresql_replication_slot resource is not supported for this version (%s)", db.version)
+	}
 	return resourcePostgreSQLReplicationSlotReadImpl(db, d)
 }
 
@@ -140,6 +149,9 @@ func resourcePostgreSQLReplicationSlotReadImpl(db *DBConnection, d *schema.Resou
 }
 
 func resourcePostgreSQLReplicationSlotDelete(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureReplication) {
+		return fmt.Errorf("postgresql_replication_slot resource is not supported for this version (%s)", db.version)
+	}
 
 	replicationSlotName := d.Get("name").(string)
 	database := getDatabaseForReplicationSlot(d, db.client.databaseName)

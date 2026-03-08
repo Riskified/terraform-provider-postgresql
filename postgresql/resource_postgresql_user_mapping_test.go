@@ -14,6 +14,7 @@ func TestAccPostgresqlUserMapping_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureServer)
 			testSuperuserPreCheck(t)
 		},
@@ -44,6 +45,7 @@ func TestAccPostgresqlUserMapping_Update(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testCheckCompatibleVersion(t, featureServer)
 			testSuperuserPreCheck(t)
 		},

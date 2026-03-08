@@ -13,6 +13,7 @@ func TestAccPostgresqlReplicationSlot_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
@@ -129,6 +130,7 @@ func TestAccPostgresqlReplicationSlot_Database(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			skipIfNotPostgres(t)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
