@@ -13,11 +13,11 @@ import (
 )
 
 const (
-	schemaNameAttr          = "name"
-	schemaDatabaseAttr      = "database"
-	schemaOwnerAttr         = "owner"
-	schemaIfNotExists       = "if_not_exists"
-	schemaDropCascade       = "drop_cascade"
+	schemaNameAttr           = "name"
+	schemaDatabaseAttr       = "database"
+	schemaOwnerAttr          = "owner"
+	schemaIfNotExists        = "if_not_exists"
+	schemaDropCascade        = "drop_cascade"
 	schemaDeletionProtection = "deletion_protection"
 )
 
