@@ -840,8 +840,9 @@ resource "postgresql_role" "test" {
 }
 
 resource "postgresql_database" "test_db" {
-	depends_on = [postgresql_role.test]
-	name = "test_grant_db"
+	depends_on          = [postgresql_role.test]
+	name                = "test_grant_db"
+	deletion_protection = false
 }
 
 resource "postgresql_grant" "test" {
@@ -900,10 +901,11 @@ resource "postgresql_role" "test" {
 }
 
 resource "postgresql_schema" "test_schema" {
-	depends_on   = [postgresql_role.test]
-	name         = "test_schema"
-	database     = "postgres"
-	drop_cascade = true
+	depends_on          = [postgresql_role.test]
+	name                = "test_schema"
+	database            = "postgres"
+	drop_cascade        = true
+	deletion_protection = false
 }
 
 resource "postgresql_grant" "test" {
