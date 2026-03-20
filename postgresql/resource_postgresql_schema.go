@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	schemaNameAttr     = "name"
-	schemaDatabaseAttr = "database"
-	schemaOwnerAttr    = "owner"
-	schemaIfNotExists  = "if_not_exists"
-	schemaDropCascade  = "drop_cascade"
+	schemaNameAttr          = "name"
+	schemaDatabaseAttr      = "database"
+	schemaOwnerAttr         = "owner"
+	schemaIfNotExists       = "if_not_exists"
+	schemaDropCascade       = "drop_cascade"
+	schemaDeletionProtection = "deletion_protection"
 )
 
 func resourcePostgreSQLSchema() *schema.Resource {
@@ -61,6 +62,12 @@ func resourcePostgreSQLSchema() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 				Description: "When true, will also drop all the objects that are contained in the schema",
+			},
+			schemaDeletionProtection: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
+				Description: "If true, Terraform will refuse to destroy this schema. Set to false to allow deletion.",
 			},
 		},
 	}
@@ -139,6 +146,14 @@ func setSchemaOwnerWithDB(db *DBConnection, d *schema.ResourceData) error {
 }
 
 func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) error {
+	if d.Get(schemaDeletionProtection).(bool) {
+		return fmt.Errorf(
+			"cannot destroy schema %q: deletion_protection is set to true. "+
+				"Set deletion_protection = false in your configuration before destroying this resource.",
+			d.Get(schemaNameAttr).(string),
+		)
+	}
+
 	database := getDatabase(d, db.client.databaseName)
 	schemaName := d.Get(schemaNameAttr).(string)
 

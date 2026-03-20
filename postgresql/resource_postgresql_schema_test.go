@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -48,8 +49,9 @@ func TestAccPostgresqlSchema_Database(t *testing.T) {
 
 	testAccPostgresqlSchemaDatabaseConfig := fmt.Sprintf(`
 	resource "postgresql_schema" "test_database" {
-		name     = "test_database"
-		database = "%s"
+		name                = "test_database"
+		database            = "%s"
+		deletion_protection = false
 	}
 	`, dbName)
 
@@ -82,9 +84,10 @@ func TestAccPostgresqlSchema_DropCascade(t *testing.T) {
 
 	var testAccPostgresqlSchemaConfig = fmt.Sprintf(`
 resource "postgresql_schema" "test_cascade" {
-  name = "foo"
-  database = "%s"
-  drop_cascade = true
+  name                = "foo"
+  database            = "%s"
+  drop_cascade        = true
+  deletion_protection = false
 }
 `, dbName)
 	resource.Test(t, resource.TestCase{
@@ -118,9 +121,10 @@ func TestAccPostgresqlSchema_AlreadyExists(t *testing.T) {
 	// to assert it does not fail.
 	var testAccPostgresqlSchemaConfig = fmt.Sprintf(`
 resource "postgresql_schema" "public" {
-  name = "public"
-  database = "%s"
-  owner = "%s"
+  name                = "public"
+  database            = "%s"
+  owner               = "%s"
+  deletion_protection = false
 }
 `, dbName, roleName)
 	resource.Test(t, resource.TestCase{
@@ -149,8 +153,9 @@ func TestAccPostgresqlSchema_Import(t *testing.T) {
 
 	tfConfig := fmt.Sprintf(`
 resource "postgresql_schema" "import_schema" {
-  name     = "import_test_schema"
-  database = "%s"
+  name                = "import_test_schema"
+  database            = "%s"
+  deletion_protection = false
 }
 `, dbName)
 
@@ -170,7 +175,7 @@ resource "postgresql_schema" "import_schema" {
 				ImportState:       true,
 				ImportStateVerify: true,
 				// if_not_exists and drop_cascade are local-only flags not stored in the database.
-				ImportStateVerifyIgnore: []string{"if_not_exists", "drop_cascade"},
+				ImportStateVerifyIgnore: []string{"if_not_exists", "drop_cascade", "deletion_protection"},
 			},
 		},
 	})
@@ -190,9 +195,10 @@ resource "postgresql_role" "owner_b" {
 }
 
 resource "postgresql_schema" "owner_change" {
-  name     = "owner_change_schema"
-  database = "%s"
-  owner    = "%s"
+  name                = "owner_change_schema"
+  database            = "%s"
+  owner               = "%s"
+  deletion_protection = false
 }
 `, dbSuffix, dbName, roleName)
 
@@ -202,9 +208,10 @@ resource "postgresql_role" "owner_b" {
 }
 
 resource "postgresql_schema" "owner_change" {
-  name     = "owner_change_schema"
-  database = "%s"
-  owner    = postgresql_role.owner_b.name
+  name                = "owner_change_schema"
+  database            = "%s"
+  owner               = postgresql_role.owner_b.name
+  deletion_protection = false
 }
 `, dbSuffix, dbName)
 
@@ -382,18 +389,75 @@ resource "postgresql_role" "role_all_without_grant" {
 }
 
 resource "postgresql_schema" "test1" {
-  name = "foo"
+  name                = "foo"
+  deletion_protection = false
 }
 
 resource "postgresql_schema" "test2" {
-  name = "bar"
-  owner = "${postgresql_role.role_all_without_grant.name}"
-  if_not_exists = false
+  name                = "bar"
+  owner               = "${postgresql_role.role_all_without_grant.name}"
+  if_not_exists       = false
+  deletion_protection = false
 }
 
 resource "postgresql_schema" "test3" {
-  name = "baz"
-  owner = "${postgresql_role.role_all_without_grant.name}"
-  if_not_exists = true
+  name                = "baz"
+  owner               = "${postgresql_role.role_all_without_grant.name}"
+  if_not_exists       = true
+  deletion_protection = false
 }
 `
+
+func TestAccPostgresqlSchema_DeletionProtection(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+resource "postgresql_schema" "deletion_protection_test" {
+  name                = "deletion_protection_test_schema"
+  database            = "%s"
+  deletion_protection = true
+}
+`, dbName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.deletion_protection_test", "deletion_protection_test_schema"),
+					resource.TestCheckResourceAttr("postgresql_schema.deletion_protection_test", "deletion_protection", "true"),
+				),
+			},
+			{
+				Config: fmt.Sprintf(`
+resource "postgresql_schema" "deletion_protection_test" {
+  name                = "deletion_protection_test_schema"
+  database            = "%s"
+  deletion_protection = true
+}
+`, dbName),
+				Destroy:     true,
+				ExpectError: regexp.MustCompile(`deletion_protection is set to true`),
+			},
+			{
+				Config: fmt.Sprintf(`
+resource "postgresql_schema" "deletion_protection_test" {
+  name                = "deletion_protection_test_schema"
+  database            = "%s"
+  deletion_protection = false
+}
+`, dbName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.deletion_protection_test", "deletion_protection_test_schema"),
+					resource.TestCheckResourceAttr("postgresql_schema.deletion_protection_test", "deletion_protection", "false"),
+				),
+			},
+		},
+	})
+}

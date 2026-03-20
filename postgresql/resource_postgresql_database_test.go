@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -75,8 +76,9 @@ resource postgresql_role "test_owner" {
        name = "test_owner"
 }
 resource postgresql_database "test_db" {
-       name  = "test_db"
-       owner = "${postgresql_role.test_owner.name}"
+       name               = "test_db"
+       owner              = "${postgresql_role.test_owner.name}"
+       deletion_protection = false
 }
 `
 	resource.Test(t, resource.TestCase{
@@ -119,8 +121,9 @@ func TestAccPostgresqlDatabase_GrantOwnerNotNeeded(t *testing.T) {
 
 	var stateConfig = `
 resource postgresql_database "test_db" {
-       name  = "test_db"
-       owner = "test_owner"
+       name               = "test_db"
+       owner              = "test_owner"
+       deletion_protection = false
 }
 `
 	resource.Test(t, resource.TestCase{
@@ -261,7 +264,8 @@ func TestAccPostgresqlDatabase_LcCollate(t *testing.T) {
 				// Just verify the attributes are read back with whatever the system locale is.
 				Config: `
 resource "postgresql_database" "lc_test" {
-  name = "lc_collate_test_db"
+  name                = "lc_collate_test_db"
+  deletion_protection = false
 }
 `,
 				Check: resource.ComposeTestCheckFunc(
@@ -284,8 +288,9 @@ func TestAccPostgresqlDatabase_Import(t *testing.T) {
 			{
 				Config: `
 resource "postgresql_database" "import_db" {
-  name     = "import_test_db"
-  encoding = "UTF8"
+  name                = "import_test_db"
+  encoding            = "UTF8"
+  deletion_protection = false
 }
 `,
 				Check: resource.ComposeTestCheckFunc(
@@ -293,9 +298,10 @@ resource "postgresql_database" "import_db" {
 				),
 			},
 			{
-				ResourceName:      "postgresql_database.import_db",
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:            "postgresql_database.import_db",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"deletion_protection"},
 			},
 		},
 	})
@@ -308,25 +314,73 @@ resource "postgresql_role" "myrole" {
 }
 
 resource "postgresql_database" "mydb" {
-   name = "mydb"
-   owner = "${postgresql_role.myrole.name}"
+   name                = "mydb"
+   owner               = "${postgresql_role.myrole.name}"
+   deletion_protection = false
 }
 
 resource "postgresql_database" "mydb2" {
-   name = "mydb2"
-   owner = "${postgresql_role.myrole.name}"
+   name                = "mydb2"
+   owner               = "${postgresql_role.myrole.name}"
+   deletion_protection = false
 }
 
 resource "postgresql_database" "default_opts" {
-   name = "default_opts_name"
-   owner = "${postgresql_role.myrole.name}"
-   encoding = "UTF8"
-   connection_limit = -1
+   name                = "default_opts_name"
+   owner               = "${postgresql_role.myrole.name}"
+   encoding            = "UTF8"
+   connection_limit    = -1
+   deletion_protection = false
 }
 
 
 resource "postgresql_database" "mydb_default_owner" {
-   name = "mydb_default_owner"
+   name                = "mydb_default_owner"
+   deletion_protection = false
 }
 
 `
+
+func TestAccPostgresqlDatabase_DeletionProtection(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_database" "deletion_protection_test" {
+  name                = "deletion_protection_test_db"
+  deletion_protection = true
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.deletion_protection_test"),
+					resource.TestCheckResourceAttr("postgresql_database.deletion_protection_test", "deletion_protection", "true"),
+				),
+			},
+			{
+				Config: `
+resource "postgresql_database" "deletion_protection_test" {
+  name                = "deletion_protection_test_db"
+  deletion_protection = true
+}
+`,
+				Destroy:     true,
+				ExpectError: regexp.MustCompile(`deletion_protection is set to true`),
+			},
+			{
+				Config: `
+resource "postgresql_database" "deletion_protection_test" {
+  name                = "deletion_protection_test_db"
+  deletion_protection = false
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.deletion_protection_test"),
+					resource.TestCheckResourceAttr("postgresql_database.deletion_protection_test", "deletion_protection", "false"),
+				),
+			},
+		},
+	})
+}

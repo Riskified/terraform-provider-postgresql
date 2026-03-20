@@ -14,12 +14,13 @@ import (
 )
 
 const (
-	dbCTypeAttr     = "lc_ctype"
-	dbCollationAttr = "lc_collate"
-	dbConnLimitAttr = "connection_limit"
-	dbEncodingAttr  = "encoding"
-	dbNameAttr      = "name"
-	dbOwnerAttr     = "owner"
+	dbCTypeAttr              = "lc_ctype"
+	dbCollationAttr          = "lc_collate"
+	dbConnLimitAttr          = "connection_limit"
+	dbEncodingAttr           = "encoding"
+	dbNameAttr               = "name"
+	dbOwnerAttr              = "owner"
+	dbDeletionProtectionAttr = "deletion_protection"
 )
 
 func resourcePostgreSQLDatabase() *schema.Resource {
@@ -72,6 +73,12 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 				Default:      -1,
 				Description:  "How many concurrent connections can be made to this database",
 				ValidateFunc: validation.IntAtLeast(-1),
+			},
+			dbDeletionProtectionAttr: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
+				Description: "If true, Terraform will refuse to destroy this database. Set to false to allow deletion.",
 			},
 		},
 	}
@@ -159,6 +166,14 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 }
 
 func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) error {
+	if d.Get(dbDeletionProtectionAttr).(bool) {
+		return fmt.Errorf(
+			"cannot destroy database %q: deletion_protection is set to true. "+
+				"Set deletion_protection = false in your configuration before destroying this resource.",
+			d.Get(dbNameAttr).(string),
+		)
+	}
+
 	currentUser := db.client.config.getDatabaseUsername()
 	owner := d.Get(dbOwnerAttr).(string)
 
