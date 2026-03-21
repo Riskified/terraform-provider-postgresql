@@ -17,13 +17,12 @@ func testAccCheckCockroachDBExternalConnectionDestroy(s *terraform.State) error 
 			continue
 		}
 
-		txn, err := startTransaction(client, "")
+		db, err := client.Connect()
 		if err != nil {
 			return err
 		}
-		defer deferredRollback(txn)
 
-		exists, err := connExists(txn, rs.Primary.ID)
+		exists, err := connExists(db, rs.Primary.ID)
 		if err != nil {
 			return fmt.Errorf("error checking external connection %s: %w", rs.Primary.ID, err)
 		}
@@ -47,14 +46,12 @@ func testAccCheckCockroachDBExternalConnectionExists(n string) resource.TestChec
 			return fmt.Errorf("No ID is set")
 		}
 
-		client := testAccProvider.Meta().(*Client)
-		txn, err := startTransaction(client, "")
+		db, err := testAccProvider.Meta().(*Client).Connect()
 		if err != nil {
 			return err
 		}
-		defer deferredRollback(txn)
 
-		exists, err := connExists(txn, rs.Primary.ID)
+		exists, err := connExists(db, rs.Primary.ID)
 		if err != nil {
 			return fmt.Errorf("error checking external connection: %w", err)
 		}

@@ -318,15 +318,13 @@ resource "postgresql_function" "import_func" {
 // testCheckFuncProcBoolAttr verifies a boolean column in pg_proc for the named function in public schema.
 func testCheckFuncProcBoolAttr(funcName, column string, expected bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		client := testAccProvider.Meta().(*Client)
-		txn, err := startTransaction(client, "")
+		db, err := testAccProvider.Meta().(*Client).Connect()
 		if err != nil {
 			return err
 		}
-		defer deferredRollback(txn)
 
 		var val bool
-		if err := txn.QueryRow(
+		if err := db.QueryRow(
 			fmt.Sprintf("SELECT %s FROM pg_proc WHERE proname=$1 AND pronamespace = 'public'::regnamespace", column),
 			funcName,
 		).Scan(&val); err != nil {
@@ -352,14 +350,16 @@ func testAccCheckPostgresqlFunctionExists(n string, database string) resource.Te
 
 		signature := rs.Primary.ID
 
-		client := testAccProvider.Meta().(*Client)
-		txn, err := startTransaction(client, database)
+		baseDB, err := testAccProvider.Meta().(*Client).Connect()
 		if err != nil {
 			return err
 		}
-		defer deferredRollback(txn)
+		db, err := connectToDatabase(baseDB, database)
+		if err != nil {
+			return err
+		}
 
-		exists, err := checkFunctionExists(txn, signature)
+		exists, err := checkFunctionExists(db, signature)
 
 		if err != nil {
 			return fmt.Errorf("Error checking function %s", err)
@@ -381,11 +381,10 @@ func testAccCheckPostgresqlFunctionDestroy(s *terraform.State) error {
 			continue
 		}
 
-		txn, err := startTransaction(client, "")
+		db, err := client.Connect()
 		if err != nil {
 			return err
 		}
-		defer deferredRollback(txn)
 
 		_, functionSignature, expandErr := expandFunctionID(rs.Primary.ID, nil, nil)
 
@@ -393,7 +392,7 @@ func testAccCheckPostgresqlFunctionDestroy(s *terraform.State) error {
 			return fmt.Errorf("Incorrect resource Id %s", err)
 		}
 
-		exists, err := checkFunctionExists(txn, functionSignature)
+		exists, err := checkFunctionExists(db, functionSignature)
 
 		if err != nil {
 			return fmt.Errorf("Error checking function %s", err)
@@ -407,9 +406,9 @@ func testAccCheckPostgresqlFunctionDestroy(s *terraform.State) error {
 	return nil
 }
 
-func checkFunctionExists(txn *sql.Tx, signature string) (bool, error) {
+func checkFunctionExists(db QueryAble, signature string) (bool, error) {
 	var _rez bool
-	err := txn.QueryRow(fmt.Sprintf("SELECT to_regprocedure('%s') IS NOT NULL", signature)).Scan(&_rez)
+	err := db.QueryRow(fmt.Sprintf("SELECT to_regprocedure('%s') IS NOT NULL", signature)).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil

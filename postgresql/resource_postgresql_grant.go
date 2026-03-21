@@ -92,7 +92,7 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 		return fmt.Errorf("feature is not supported: %v", err)
 	}
 
-	exists, err := checkRoleDBSchemaExists(db.client, d)
+	exists, err := checkRoleDBSchemaExists(db, d)
 	if err != nil {
 		return err
 	}
@@ -104,13 +104,12 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 
 	database := d.Get("database").(string)
 
-	txn, err := startTransaction(db.client, database)
+	dbConn, err := connectToDatabase(db, database)
 	if err != nil {
 		return err
 	}
-	defer deferredRollback(txn)
 
-	return readRolePrivileges(txn, d)
+	return readRolePrivileges(dbConn, d)
 }
 
 func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) error {
@@ -148,13 +147,7 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 
 	d.SetId(generateGrantID(d))
 
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
-	return readRolePrivileges(txn, d)
+	return readRolePrivileges(dbConn, d)
 }
 
 func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) error {
@@ -175,21 +168,21 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	return nil
 }
 
-func readSystemRolePriviges(txn *sql.Tx, role string) error {
+func readSystemRolePriviges(db QueryAble, role string) error {
 	var query string
 	var privileges pq.ByteaArray
 	query = fmt.Sprintf(`with a as (show system grants for %s) select array_agg(privilege_type) from a`, role)
-	if err := txn.QueryRow(query).Scan(&privileges); err != nil {
+	if err := db.QueryRow(query).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read system privileges: %w", err)
 	}
 	return nil
 }
 
-func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData, role string) error {
+func readDatabaseRolePriviges(db QueryAble, d *schema.ResourceData, role string) error {
 	dbName := d.Get("database").(string)
 	var privileges pq.ByteaArray
 	query := fmt.Sprintf(`with a as (show grants on database %s for %s) select array_agg(privilege_type) from a where grantee=%s`, pq.QuoteIdentifier(dbName), pq.QuoteIdentifier(role), pq.QuoteLiteral(role))
-	if err := txn.QueryRow(query).Scan(&privileges); err != nil {
+	if err := db.QueryRow(query).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 	}
 
@@ -197,11 +190,11 @@ func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData, role string) 
 	return nil
 }
 
-func readSchemaRolePriviges(txn *sql.Tx, d *schema.ResourceData, role string) error {
+func readSchemaRolePriviges(db QueryAble, d *schema.ResourceData, role string) error {
 	schemaName := d.Get("schema").(string)
 	var privileges pq.ByteaArray
 	query := fmt.Sprintf(`with a as ( show grants on schema %s for %s) select array_agg(privilege_type) from a where grantee=%s;`, pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(role), pq.QuoteLiteral(role))
-	if err := txn.QueryRow(query).Scan(&privileges); err != nil {
+	if err := db.QueryRow(query).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read privileges for schema %s: %w", schemaName, err)
 	}
 
@@ -209,7 +202,7 @@ func readSchemaRolePriviges(txn *sql.Tx, d *schema.ResourceData, role string) er
 	return nil
 }
 
-func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
+func readRolePrivileges(db QueryAble, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
 	objects := d.Get("objects").(*schema.Set)
@@ -220,12 +213,12 @@ func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 
 	switch objectType {
 	case "system":
-		return readSystemRolePriviges(txn, role)
+		return readSystemRolePriviges(db, role)
 	case "database":
-		return readDatabaseRolePriviges(txn, d, role)
+		return readDatabaseRolePriviges(db, d, role)
 
 	case "schema":
-		return readSchemaRolePriviges(txn, d, role)
+		return readSchemaRolePriviges(db, d, role)
 
 	case "function", "procedure", "routine":
 		// CockroachDB: pg_proc.proacl is always NULL; use information_schema instead
@@ -236,11 +229,11 @@ WHERE routine_schema = %s
 AND grantee = %s
 GROUP BY routine_name`,
 			pq.QuoteLiteral(d.Get("schema").(string)), pq.QuoteLiteral(role))
-		rows, err = txn.Query(query)
+		rows, err = db.Query(query)
 
 	default:
 		query = fmt.Sprintf("with a as (show tables from %s) , b as (show grants on table * for %s) select a.table_name,  array_agg(privilege_type) from a inner join b on a.table_name=b.table_name and a.schema_name = b.schema_name  where a.type='%s'  and grantee= %s group by a.table_name;", pq.QuoteIdentifier(d.Get("schema").(string)), pq.QuoteIdentifier(role), objectType, pq.QuoteLiteral(role))
-		rows, err = txn.Query(query)
+		rows, err = db.Query(query)
 	}
 
 	// This returns, for the specified role (rolname),
@@ -420,17 +413,11 @@ func revokeRolePrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error 
 	return nil
 }
 
-func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, error) {
-	txn, err := startTransaction(client, "")
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
+func checkRoleDBSchemaExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
 	// Check the role exists
 	role := d.Get("role").(string)
 	if role != publicRole {
-		exists, err := roleExists(txn, role)
+		exists, err := roleExists(db, role)
 		if err != nil {
 			return false, err
 		}
@@ -442,7 +429,7 @@ func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, erro
 
 	// Check the database exists
 	database := d.Get("database").(string)
-	exists, err := dbExists(txn, database)
+	exists, err := dbExists(db, database)
 	if err != nil {
 		return false, err
 	}
@@ -455,14 +442,13 @@ func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, erro
 
 	if d.Get("object_type").(string) != "database" && pgSchema != "" {
 		// Connect on this database to check if schema exists
-		dbTxn, err := startTransaction(client, database)
+		dbConn, err := connectToDatabase(db, database)
 		if err != nil {
 			return false, err
 		}
-		defer deferredRollback(dbTxn)
 
 		// Check the schema exists (the SQL connection needs to be on the right database)
-		exists, err = schemaExists(dbTxn, pgSchema)
+		exists, err = schemaExists(dbConn, pgSchema)
 		if err != nil {
 			return false, err
 		}

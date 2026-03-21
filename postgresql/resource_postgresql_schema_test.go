@@ -253,11 +253,14 @@ func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 			return fmt.Errorf("No Attribute for database is set")
 		}
 
-		txn, err := startTransaction(client, database)
+		baseDB, err := client.Connect()
 		if err != nil {
 			return err
 		}
-		defer deferredRollback(txn)
+		db, err := connectToDatabase(baseDB, database)
+		if err != nil {
+			return err
+		}
 
 		// Schema ID format is "database.schemaname"
 		parts := strings.Split(rs.Primary.ID, ".")
@@ -266,11 +269,10 @@ func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 		// The public schema is never dropped (intentionally skipped in delete),
 		// so it will always exist — skip the check for it.
 		if schemaName == "public" {
-			_ = txn.Rollback()
 			continue
 		}
 
-		exists, err := checkSchemaExists(txn, schemaName)
+		exists, err := checkSchemaExists(db, schemaName)
 
 		if err != nil {
 			return fmt.Errorf("Error checking schema %s", err)
@@ -305,14 +307,16 @@ func testAccCheckPostgresqlSchemaExists(n string, schemaName string) resource.Te
 			return fmt.Errorf("Wrong value for schema name expected %s got %s", schemaName, actualSchemaName)
 		}
 
-		client := testAccProvider.Meta().(*Client)
-		txn, err := startTransaction(client, database)
+		baseDB, err := testAccProvider.Meta().(*Client).Connect()
 		if err != nil {
 			return err
 		}
-		defer deferredRollback(txn)
+		db, err := connectToDatabase(baseDB, database)
+		if err != nil {
+			return err
+		}
 
-		exists, err := checkSchemaExists(txn, schemaName)
+		exists, err := checkSchemaExists(db, schemaName)
 
 		if err != nil {
 			return fmt.Errorf("Error checking schema %s", err)
@@ -326,9 +330,9 @@ func testAccCheckPostgresqlSchemaExists(n string, schemaName string) resource.Te
 	}
 }
 
-func checkSchemaExists(txn *sql.Tx, schemaName string) (bool, error) {
+func checkSchemaExists(db QueryAble, schemaName string) (bool, error) {
 	var _rez bool
-	err := txn.QueryRow("SELECT TRUE FROM pg_catalog.pg_namespace WHERE nspname=$1", schemaName).Scan(&_rez)
+	err := db.QueryRow("SELECT TRUE FROM pg_catalog.pg_namespace WHERE nspname=$1", schemaName).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil

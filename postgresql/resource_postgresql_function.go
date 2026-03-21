@@ -221,19 +221,14 @@ func resourcePostgreSQLFunctionExists(db *DBConnection, d *schema.ResourceData) 
 
 	var functionExists bool
 
-	txn, err := startTransaction(db.client, databaseName)
+	dbConn, err := connectToDatabase(db, databaseName)
 	if err != nil {
 		return false, err
 	}
-	defer deferredRollback(txn)
 
 	query := fmt.Sprintf("SELECT to_regprocedure('%s') IS NOT NULL AS functionExists", functionSignature)
 
-	if err := txn.QueryRow(query).Scan(&functionExists); err != nil {
-		return false, err
-	}
-
-	if err := txn.Commit(); err != nil {
+	if err := dbConn.QueryRow(query).Scan(&functionExists); err != nil {
 		return false, err
 	}
 
@@ -275,13 +270,12 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		`LEFT JOIN pg_namespace n ON p.pronamespace = n.oid ` +
 		`WHERE p.oid = to_regprocedure($1)`
 
-	txn, err := startTransaction(db.client, databaseName)
+	dbConn, err := connectToDatabase(db, databaseName)
 	if err != nil {
 		return err
 	}
-	defer deferredRollback(txn)
 
-	err = txn.QueryRow(query, functionSignature).Scan(&funcDefinition)
+	err = dbConn.QueryRow(query, functionSignature).Scan(&funcDefinition)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL function: %s", functionId)
@@ -289,10 +283,6 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		return nil
 	case err != nil:
 		return fmt.Errorf("Error reading function: %w", err)
-	}
-
-	if err := txn.Commit(); err != nil {
-		return err
 	}
 
 	var pgFunction PGFunction

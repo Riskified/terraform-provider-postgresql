@@ -261,8 +261,8 @@ func dbExists(db QueryAble, dbname string) (bool, error) {
 	return true, nil
 }
 
-func roleExists(txn *sql.Tx, rolname string) (bool, error) {
-	err := txn.QueryRow("SELECT 1 FROM pg_roles WHERE rolname=$1", rolname).Scan(&rolname)
+func roleExists(db QueryAble, rolname string) (bool, error) {
+	err := db.QueryRow("SELECT 1 FROM pg_roles WHERE rolname=$1", rolname).Scan(&rolname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -273,8 +273,8 @@ func roleExists(txn *sql.Tx, rolname string) (bool, error) {
 	return true, nil
 }
 
-func schemaExists(txn *sql.Tx, schemaname string) (bool, error) {
-	err := txn.QueryRow("SELECT 1 FROM pg_namespace WHERE nspname=$1", schemaname).Scan(&schemaname)
+func schemaExists(db QueryAble, schemaname string) (bool, error) {
+	err := db.QueryRow("SELECT 1 FROM pg_namespace WHERE nspname=$1", schemaname).Scan(&schemaname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil

@@ -206,13 +206,7 @@ func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) 
 }
 
 func resourcePostgreSQLDatabaseExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	return dbExists(txn, d.Id())
+	return dbExists(db, d.Id())
 }
 
 func resourcePostgreSQLDatabaseRead(db *DBConnection, d *schema.ResourceData) error {

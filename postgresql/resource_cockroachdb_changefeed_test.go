@@ -250,13 +250,12 @@ func testAccCheckCockroachDBChangefeedDestroy(s *terraform.State) error {
 			continue
 		}
 
-		txn, err := startTransaction(client, "")
+		db, err := client.Connect()
 		if err != nil {
 			return err
 		}
-		defer deferredRollback(txn)
 
-		exists, err := jobExists(txn, rs.Primary.ID)
+		exists, err := jobExists(db, rs.Primary.ID)
 		if err != nil {
 			return fmt.Errorf("error checking changefeed job %s: %w", rs.Primary.ID, err)
 		}
@@ -280,14 +279,12 @@ func testAccCheckCockroachDBChangefeedExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("No ID is set")
 		}
 
-		client := testAccProvider.Meta().(*Client)
-		txn, err := startTransaction(client, "")
+		db, err := testAccProvider.Meta().(*Client).Connect()
 		if err != nil {
 			return err
 		}
-		defer deferredRollback(txn)
 
-		exists, err := jobExists(txn, rs.Primary.ID)
+		exists, err := jobExists(db, rs.Primary.ID)
 		if err != nil {
 			return fmt.Errorf("error checking changefeed job: %w", err)
 		}
