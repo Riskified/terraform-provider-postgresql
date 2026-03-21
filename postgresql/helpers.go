@@ -220,33 +220,11 @@ func setToPgIdentSimpleList(idents *schema.Set) string {
 // connectToDatabase returns a DBConnection for the specified database.
 // If the current connection is already on the target database, it is returned as-is.
 // Otherwise a new connection (from the shared registry) is created for that database.
-// This mirrors what startTransaction does for the PostgreSQL path, but without a
-// transaction — needed for CockroachDB which does not support DDL inside explicit transactions.
 func connectToDatabase(db *DBConnection, database string) (*DBConnection, error) {
 	if database == "" || database == db.client.databaseName {
 		return db, nil
 	}
 	return db.client.config.NewClient(database).Connect()
-}
-
-// startTransaction starts a new DB transaction on the specified database.
-// If the database is specified and different from the one configured in the provider,
-// it will create a new connection pool if needed.
-func startTransaction(client *Client, database string) (*sql.Tx, error) {
-	if database != "" && database != client.databaseName {
-		client = client.config.NewClient(database)
-	}
-	db, err := client.Connect()
-	if err != nil {
-		return nil, err
-	}
-
-	txn, err := db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("could not start transaction: %w", err)
-	}
-
-	return txn, nil
 }
 
 func dbExists(db QueryAble, dbname string) (bool, error) {
@@ -295,19 +273,6 @@ func schemaExistsWithDB(db *DBConnection, schemaname string) (bool, error) {
 	}
 
 	return true, nil
-}
-
-// deferredRollback can be used to rollback a transaction in a defer.
-// It will log an error if it fails
-func deferredRollback(txn *sql.Tx) {
-	err := txn.Rollback()
-	switch {
-	case err == sql.ErrTxDone:
-		// transaction has already been committed or rolled back
-		log.Printf("[DEBUG]: %v", err)
-	case err != nil:
-		log.Printf("[ERR] could not rollback transaction: %v", err)
-	}
 }
 
 func getDatabase(d *schema.ResourceData, databaseName string) string {
