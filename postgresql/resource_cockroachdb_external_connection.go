@@ -35,16 +35,8 @@ func resourceCockroachDBExternalConnection() *schema.Resource {
 func resourceCockroachDBExternalConnectionCreate(db *DBConnection, d *schema.ResourceData) error {
 	connName := d.Get(ConnName).(string)
 	connUrl := d.Get(ConnUrl).(string)
-	database := db.client.databaseName
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return fmt.Errorf("Error starting transaction: %w", err)
-	}
-	if _, err = txn.Exec(fmt.Sprintf("CREATE EXTERNAL CONNECTION %s AS '%s'", connName, connUrl)); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("CREATE EXTERNAL CONNECTION %s AS '%s'", connName, connUrl)); err != nil {
 		return fmt.Errorf("Error creating EXTERNAL CONNECTION confluent_registry: %w", err)
-	}
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 	d.SetId(connName)
 	d.Set(ConnUrl, connUrl)
@@ -57,13 +49,8 @@ func resourceCockroachDBExternalConnectionRead(db *DBConnection, d *schema.Resou
 
 func resourceCockroachDBExternalConnectionReadImpl(db *DBConnection, d *schema.ResourceData) error {
 	connName := d.Get(ConnName).(string)
-	database := db.client.databaseName
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return fmt.Errorf("Error starting transaction: %w", err)
-	}
 	var connUrl string
-	if err := txn.QueryRow(fmt.Sprintf("select connection_uri from [show external connection %s]", connName)).Scan(&connUrl); err != nil {
+	if err := db.QueryRow(fmt.Sprintf("select connection_uri from [show external connection %s]", connName)).Scan(&connUrl); err != nil {
 		return fmt.Errorf("Error reading EXTERNAL CONNECTION: %w", err)
 	}
 	d.Set(ConnName, connName)
@@ -72,28 +59,15 @@ func resourceCockroachDBExternalConnectionReadImpl(db *DBConnection, d *schema.R
 
 func resourceCockroachDBExternalConnectionDelete(db *DBConnection, d *schema.ResourceData) error {
 	connName := d.Get(ConnName).(string)
-	database := db.client.databaseName
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return fmt.Errorf("Error starting transaction: %w", err)
-	}
-	if _, err = txn.Exec(fmt.Sprintf("DROP EXTERNAL CONNECTION %s", connName)); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("DROP EXTERNAL CONNECTION %s", connName)); err != nil {
 		return fmt.Errorf("Error deleting EXTERNAL CONNECTION: %w", err)
-	}
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 	d.SetId("")
 	return nil
 }
 
 func resourceCockroachDBExternalConnectionExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-	return connExists(txn, d.Id())
+	return connExists(db, d.Id())
 }
 
 func connExists(db QueryAble, connName string) (bool, error) {

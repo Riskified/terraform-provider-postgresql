@@ -7,15 +7,25 @@ on:
   pull_request:
 
 jobs:
-  test:
+  test-crdb:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
-        pgversion: [15, 14, 13, 12, 11]
+        include:
+          - crdbversion: 24.3
+            crdb_image_tag: latest-v24.3
+          - crdbversion: 25.2
+            crdb_image_tag: latest-v25.2
+          - crdbversion: 25.4
+            crdb_image_tag: latest-v25.4
+          - crdbversion: 26.1
+            crdb_image_tag: latest-v26.1
 
     env:
-      PGVERSION: ${{ matrix.pgversion }}
+      CRDBVERSION: ${{ matrix.crdbversion }}
+      CRDB_IMAGE_TAG: ${{ matrix.crdb_image_tag }}
 
     steps:
       - name: Checkout
@@ -32,5 +42,5 @@ jobs:
       - name: vet
         run: make vet
 
-      - name: testacc
-        run: make testacc
+      - name: testacc_crdb
+        run: make testacc_crdb

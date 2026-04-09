@@ -102,20 +102,14 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 		`CREATE CHANGEFEED FOR TABLE %v INTO "external://%s" WITH %s updated, %s diff, on_error='pause', format = avro, avro_schema_prefix='%s_', confluent_schema_registry = 'external://%s'`,
 		tableListStr, kafkaConnectionName, initialScanClause, cursorClause, avroSchemaPrefix, registryConnectionName,
 	)
-	txn, err := startTransaction(db.client, database)
+	dbConn, err := connectToDatabase(db, database)
 	if err != nil {
-		return fmt.Errorf("error starting transaction: %w", err)
+		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	var jobID string
-	if err = txn.QueryRow(sqlChangefeed).Scan(&jobID); err != nil {
+	if err = dbConn.QueryRow(sqlChangefeed).Scan(&jobID); err != nil {
 		return fmt.Errorf("error creating changefeed: %w", err)
 	}
-	if db.dbType != dbTypeCockroachdb {
-		if err = txn.Commit(); err != nil {
-			return fmt.Errorf("could not commit transaction: %w", err)
-		}
-	}
-
 	d.SetId(jobID)
 	d.Set(CDCAvroSchemaPrefix, avroSchemaPrefix)
 	d.Set(CDCRegistryConnectionName, registryConnectionName)
@@ -176,29 +170,15 @@ func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceD
 }
 
 func resourceCockroachDBChangefeedDelete(db *DBConnection, d *schema.ResourceData) error {
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-	if _, err = txn.Exec(fmt.Sprintf("CANCEL JOB %s", d.Id())); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("CANCEL JOB %s", d.Id())); err != nil {
 		return fmt.Errorf("could not cancel job: %w", err)
-	}
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 	d.SetId("")
 	return nil
-
 }
 
 func resourceCockroachDBChangefeedExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-	return jobExists(txn, d.Id())
+	return jobExists(db, d.Id())
 }
 
 func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceData) error {
@@ -214,54 +194,34 @@ func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceDat
 	tablesToAdd, tablesToRemove := findTableChanges(currentTableList, newTableList)
 
 	jobID := d.Id()
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return fmt.Errorf("Error starting transaction: %w", err)
-	}
-	defer deferredRollback(txn)
 
 	if len(tablesToAdd) > 0 || len(tablesToRemove) > 0 {
 		// Pause the job
-		_, err = txn.Exec(fmt.Sprintf("PAUSE JOB %s", jobID))
-		if err != nil {
+		if _, err := db.Exec(fmt.Sprintf("PAUSE JOB %s", jobID)); err != nil {
 			return fmt.Errorf("Error pausing changefeed job: %w", err)
 		}
-		if err = txn.Commit(); err != nil {
-			return fmt.Errorf("could not commit transaction: %w", err)
-		}
-		if err = waitForJobStatus(db, jobID, "PAUSED"); err != nil {
+		if err := waitForJobStatus(db, jobID, "PAUSED"); err != nil {
 			return fmt.Errorf("error waiting for job status to be paused: %w", err)
 		}
 
 		// Alter the changefeed to add new tables
-		txn, err = startTransaction(db.client, "")
-		if err != nil {
-			return fmt.Errorf("error starting transaction: %w", err)
-		}
 		for _, table := range tablesToAdd {
-			_, err = txn.Exec(fmt.Sprintf("ALTER CHANGEFEED %s ADD %s", jobID, table))
-			if err != nil {
+			if _, err := db.Exec(fmt.Sprintf("ALTER CHANGEFEED %s ADD %s", jobID, table)); err != nil {
 				return fmt.Errorf("Error altering changefeed to add table %s: %w", table, err)
 			}
 		}
 
 		// Alter the changefeed to drop removed tables
 		for _, table := range tablesToRemove {
-			_, err = txn.Exec(fmt.Sprintf("ALTER CHANGEFEED %s DROP %s", jobID, table))
-			if err != nil {
+			if _, err := db.Exec(fmt.Sprintf("ALTER CHANGEFEED %s DROP %s", jobID, table)); err != nil {
 				return fmt.Errorf("Error altering changefeed to drop table %s: %w", table, err)
 			}
 		}
 
 		// Resume the job
-		_, err = txn.Exec(fmt.Sprintf("RESUME JOB %s", jobID))
-		if err != nil {
+		if _, err := db.Exec(fmt.Sprintf("RESUME JOB %s", jobID)); err != nil {
 			return fmt.Errorf("Error resuming changefeed job: %w", err)
 		}
-	}
-
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
 	return resourceCockroachDBChangefeedReadImpl(db, d)
@@ -324,33 +284,14 @@ func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string, ti
 		case <-timeoutChan:
 			return fmt.Errorf("timeout reached while waiting for job status to be %s", requestedStatus)
 		case <-ticker.C:
-			txn, err := startTransaction(db.client, "")
-			if err != nil {
-				return fmt.Errorf("error starting transaction: %w", err)
-			}
-
 			var status string
 			query := fmt.Sprintf("SELECT status FROM [SHOW JOB %s]", jobID)
-			err = txn.QueryRow(query).Scan(&status)
-			if err != nil {
-				err = txn.Rollback()
-				if err != nil {
-					return err
-				}
+			if err := db.QueryRow(query).Scan(&status); err != nil {
 				return fmt.Errorf("error querying job status: %w", err)
 			}
 
 			if strings.EqualFold(status, requestedStatus) {
-				err = txn.Commit()
-				if err != nil {
-					return err
-				}
 				return nil
-			}
-
-			err = txn.Commit()
-			if err != nil {
-				return err
 			}
 		}
 	}

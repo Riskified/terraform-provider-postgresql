@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"database/sql"
 	"fmt"
 	"testing"
 
@@ -270,6 +271,178 @@ resource "postgresql_default_privileges" "test_ro" {
 			})
 		})
 	}
+}
+
+func TestAccPostgresqlDefaultPrivileges_Sequence(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	config := getTestConfig(t)
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	tfConfig := fmt.Sprintf(`
+resource "postgresql_default_privileges" "seq_priv" {
+  database    = "%s"
+  owner       = "%s"
+  role        = "%s"
+  schema      = "test_schema"
+  object_type = "sequence"
+  privileges  = ["USAGE"]
+}
+`, dbName, config.Username, roleName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_default_privileges.seq_priv", "object_type", "sequence"),
+					resource.TestCheckResourceAttr("postgresql_default_privileges.seq_priv", "privileges.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_default_privileges.seq_priv", "privileges.0", "USAGE"),
+					func(*terraform.State) error {
+						seqs := []string{"test_schema.test_seq"}
+						dropFunc := createTestSequences(t, dbSuffix, seqs, "")
+						defer dropFunc()
+						return testCheckSequenceUsable(t, dbName, roleName, "test_schema.test_seq", true)
+					},
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlDefaultPrivileges_Function(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	config := getTestConfig(t)
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	tfConfig := fmt.Sprintf(`
+resource "postgresql_default_privileges" "func_priv" {
+  database    = "%s"
+  owner       = "%s"
+  role        = "%s"
+  schema      = "test_schema"
+  object_type = "function"
+  privileges  = ["EXECUTE"]
+}
+`, dbName, config.Username, roleName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featureFunction)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_default_privileges.func_priv", "object_type", "function"),
+					resource.TestCheckResourceAttr("postgresql_default_privileges.func_priv", "privileges.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_default_privileges.func_priv", "privileges.0", "EXECUTE"),
+					func(*terraform.State) error {
+						cfg := getTestConfig(t)
+						db, err := sql.Open("postgres", cfg.connStr(dbName))
+						if err != nil {
+							return fmt.Errorf("could not open connection: %w", err)
+						}
+						defer db.Close()
+						if _, err := db.Exec(`
+CREATE FUNCTION test_schema.dp_test_fn() RETURNS integer
+  LANGUAGE sql AS $$ SELECT 1 $$;
+`); err != nil {
+							return fmt.Errorf("could not create test function: %w", err)
+						}
+						defer func() { _, _ = db.Exec("DROP FUNCTION IF EXISTS test_schema.dp_test_fn()") }()
+
+						roleDB := connectAsTestRole(t, roleName, dbName)
+						defer roleDB.Close()
+						return testHasGrantForQuery(roleDB, "SELECT test_schema.dp_test_fn()", true)
+					},
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlDefaultPrivileges_Type(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	config := getTestConfig(t)
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	tfConfig := fmt.Sprintf(`
+resource "postgresql_default_privileges" "type_priv" {
+  database    = "%s"
+  owner       = "%s"
+  role        = "%s"
+  schema      = "test_schema"
+  object_type = "type"
+  privileges  = ["USAGE"]
+}
+`, dbName, config.Username, roleName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_default_privileges.type_priv", "object_type", "type"),
+					resource.TestCheckResourceAttr("postgresql_default_privileges.type_priv", "privileges.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_default_privileges.type_priv", "privileges.0", "USAGE"),
+					func(*terraform.State) error {
+						cfg := getTestConfig(t)
+						db, err := sql.Open("postgres", cfg.connStr(dbName))
+						if err != nil {
+							return fmt.Errorf("could not open connection: %w", err)
+						}
+						defer db.Close()
+						if _, err := db.Exec(`CREATE TYPE test_schema.dp_status AS ENUM ('active', 'inactive')`); err != nil {
+							return fmt.Errorf("could not create test type: %w", err)
+						}
+						defer func() { _, _ = db.Exec("DROP TYPE IF EXISTS test_schema.dp_status") }()
+
+						// Verify the grantee can use the type via a simple cast (no CREATE privilege needed).
+						roleDB := connectAsTestRole(t, roleName, dbName)
+						defer roleDB.Close()
+						err = testHasGrantForQuery(roleDB,
+							"SELECT 'active'::test_schema.dp_status", true)
+						if err != nil {
+							return err
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+// testCheckSequenceUsable verifies whether a role can call nextval on a sequence (USAGE privilege).
+func testCheckSequenceUsable(t *testing.T, dbName, roleName, seqName string, expected bool) error {
+	db := connectAsTestRole(t, roleName, dbName)
+	defer db.Close()
+	return testHasGrantForQuery(db, fmt.Sprintf("SELECT nextval('%s')", seqName), expected)
 }
 
 // Test defaults privileges on schemas

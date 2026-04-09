@@ -21,7 +21,6 @@ const (
 	funcReturnsAttr         = "returns"
 	funcDropCascadeAttr     = "drop_cascade"
 	funcDatabaseAttr        = "database"
-	funcParallelAttr        = "parallel"
 	funcSecurityDefinerAttr = "security_definer"
 	funcStrictAttr          = "strict"
 	funcVolatilityAttr      = "volatility"
@@ -32,7 +31,6 @@ const (
 	funcArgDefaultAttr = "default"
 
 	defaultFunctionVolatility = "VOLATILE"
-	defaultFunctionParallel   = "UNSAFE"
 )
 
 func resourcePostgreSQLFunction() *schema.Resource {
@@ -119,7 +117,25 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Computed:    true,
 				Description: "Function return type. If not specified, it will be calculated based on the output arguments",
 
-				DiffSuppressFunc: defaultDiffSuppressFunc,
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					normalize := func(t string) string {
+						switch strings.ToLower(strings.TrimSpace(t)) {
+						case "int8", "bigint", "integer", "int4", "int":
+							return "int8"
+						case "int2", "smallint":
+							return "int2"
+						case "float8", "double precision":
+							return "float8"
+						case "float4", "real":
+							return "float4"
+						case "bool", "boolean":
+							return "bool"
+						default:
+							return strings.ToLower(strings.TrimSpace(t))
+						}
+					}
+					return normalize(old) == normalize(new)
+				},
 			},
 			funcBodyAttr: {
 				Type:        schema.TypeString,
@@ -127,7 +143,8 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Description: "Body of the function.",
 
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					return normalizeFunctionBody(new) == old
+					return normalizeFunctionBodyForCompare(normalizeFunctionBody(new)) ==
+						normalizeFunctionBodyForCompare(old)
 				},
 				StateFunc: func(val interface{}) string {
 					return normalizeFunctionBody(val.(string))
@@ -138,14 +155,6 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Description: "Automatically drop objects that depend on the function (such as operators or triggers), and in turn all objects that depend on those objects.",
 				Optional:    true,
 				Default:     false,
-			},
-			funcParallelAttr: {
-				Type:             schema.TypeString,
-				Description:      "If the function can be executed in parallel for a single query execution. One of: UNSAFE, RESTRICTED, SAFE",
-				Optional:         true,
-				Default:          defaultFunctionParallel,
-				DiffSuppressFunc: defaultDiffSuppressFunc,
-				ValidateFunc:     validation.StringInSlice([]string{"UNSAFE", "RESTRICTED", "SAFE"}, false),
 			},
 			funcSecurityDefinerAttr: {
 				Type:        schema.TypeBool,
@@ -212,19 +221,14 @@ func resourcePostgreSQLFunctionExists(db *DBConnection, d *schema.ResourceData) 
 
 	var functionExists bool
 
-	txn, err := startTransaction(db.client, databaseName)
+	dbConn, err := connectToDatabase(db, databaseName)
 	if err != nil {
 		return false, err
 	}
-	defer deferredRollback(txn)
 
 	query := fmt.Sprintf("SELECT to_regprocedure('%s') IS NOT NULL AS functionExists", functionSignature)
 
-	if err := txn.QueryRow(query).Scan(&functionExists); err != nil {
-		return false, err
-	}
-
-	if err := txn.Commit(); err != nil {
+	if err := dbConn.QueryRow(query).Scan(&functionExists); err != nil {
 		return false, err
 	}
 
@@ -266,13 +270,12 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		`LEFT JOIN pg_namespace n ON p.pronamespace = n.oid ` +
 		`WHERE p.oid = to_regprocedure($1)`
 
-	txn, err := startTransaction(db.client, databaseName)
+	dbConn, err := connectToDatabase(db, databaseName)
 	if err != nil {
 		return err
 	}
-	defer deferredRollback(txn)
 
-	err = txn.QueryRow(query, functionSignature).Scan(&funcDefinition)
+	err = dbConn.QueryRow(query, functionSignature).Scan(&funcDefinition)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL function: %s", functionId)
@@ -280,10 +283,6 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		return nil
 	case err != nil:
 		return fmt.Errorf("Error reading function: %w", err)
-	}
-
-	if err := txn.Commit(); err != nil {
-		return err
 	}
 
 	var pgFunction PGFunction
@@ -312,7 +311,6 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 	d.Set(funcBodyAttr, pgFunction.Body)
 	d.Set(funcSecurityDefinerAttr, pgFunction.SecurityDefiner)
 	d.Set(funcStrictAttr, pgFunction.Strict)
-	d.Set(funcParallelAttr, pgFunction.Parallel)
 	d.Set(funcVolatilityAttr, pgFunction.Volatility)
 	d.Set(funcArgAttr, args)
 
@@ -341,17 +339,12 @@ func resourcePostgreSQLFunctionDelete(db *DBConnection, d *schema.ResourceData) 
 
 	sql := fmt.Sprintf("DROP FUNCTION IF EXISTS %s %s", functionSignature, dropMode)
 
-	txn, err := startTransaction(db.client, databaseName)
+	dbConn, err := connectToDatabase(db, databaseName)
 	if err != nil {
 		return err
 	}
-	defer deferredRollback(txn)
 
-	if _, err := txn.Exec(sql); err != nil {
-		return err
-	}
-
-	if err := txn.Commit(); err != nil {
+	if _, err := dbConn.Exec(sql); err != nil {
 		return err
 	}
 
@@ -431,9 +424,6 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 	if pgFunction.SecurityDefiner {
 		fmt.Fprint(b, "\nSECURITY DEFINER")
 	}
-	if pgFunction.Parallel != defaultFunctionParallel {
-		fmt.Fprint(b, "\nPARALLEL ", pgFunction.Parallel)
-	}
 	if pgFunction.Strict {
 		fmt.Fprint(b, "\nSTRICT")
 	}
@@ -442,17 +432,12 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 
 	sql := b.String()
 
-	txn, err := startTransaction(db.client, d.Get(funcDatabaseAttr).(string))
+	dbConn, err := connectToDatabase(db, d.Get(funcDatabaseAttr).(string))
 	if err != nil {
 		return err
 	}
-	defer deferredRollback(txn)
 
-	if _, err := txn.Exec(sql); err != nil {
-		return err
-	}
-
-	if err := txn.Commit(); err != nil {
+	if _, err := dbConn.Exec(sql); err != nil {
 		return err
 	}
 
