@@ -1,0 +1,81 @@
+---
+page_title: "postgresql_crdb_changefeed Resource - terraform-provider-postgresql"
+subcategory: ""
+description: |-
+  Creates and manages a CockroachDB changefeed.
+---
+
+# postgresql_crdb_changefeed (Resource)
+
+The `postgresql_crdb_changefeed` resource is used to create and manage a CockroachDB changefeed.
+
+-> **Note:** Ensure that the following command is executed on your cluster to enable rangefeeds:
+```sql
+SET CLUSTER SETTING kv.rangefeed.enabled = true;
+```
+
+## Example Usage
+
+```hcl
+resource "postgresql_crdb_changefeed" "my_changefeed" {
+  table_list               = ["table1", "table2"]
+  avro_schema_prefix       = "my_avro_prefix"
+  kafka_connection_name    = "my_kafka_connection"
+  registry_connection_name = "my_registry_connection"
+  start_from               = "2025-03-19 11:00:00"
+  initial_scan             = "no"
+}
+```
+
+### With Kafka Compression
+
+```hcl
+resource "postgresql_crdb_changefeed" "compressed" {
+  table_list               = ["table1", "table2"]
+  avro_schema_prefix       = "my_avro_prefix"
+  kafka_connection_name    = "my_kafka_connection"
+  registry_connection_name = "my_registry_connection"
+  initial_scan             = "no"
+  compression              = "LZ4"
+  compression_level        = 0
+}
+```
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`postgresql_crdb_changefeed` supports importing resources. Supposing the following Terraform:
+
+```hcl
+resource "postgresql_crdb_changefeed" "import_tst" {
+  table_list              = ["yy", "dd", "bb", "cc"]
+  avro_schema_prefix      = "my_avro_prefix"
+  kafka_connection_name   = "my_kafka_connection"
+  registry_connection_name = "my_registry_connection"
+  initial_scan            = "no"
+}
+```
+
+After creating the changefeed on the cluster, for example with the following SQL:
+
+```sql
+CREATE CHANGEFEED FOR TABLE yy, TABLE dd, TABLE bb, TABLE cc
+  INTO 'external://my_kafka_connection'
+  WITH OPTIONS (
+    avro_schema_prefix = 'my_avro_prefix_',
+    confluent_schema_registry = 'external://my_registry_connection',
+    cursor = '2025-03-19 11:00:00',
+    diff,
+    format = 'avro',
+    initial_scan = 'no',
+    on_error = 'pause',
+    updated
+  );
+```
+
+Get the `job_id` from the cluster, then import:
+
+```shell
+terraform import postgresql_crdb_changefeed.import_tst {job_id}
+```

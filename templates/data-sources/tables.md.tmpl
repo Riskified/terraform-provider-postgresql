@@ -1,0 +1,24 @@
+---
+page_title: "postgresql_tables Data Source - terraform-provider-postgresql"
+subcategory: ""
+description: |-
+  Retrieves a list of table names from a CockroachDB database.
+---
+
+# postgresql_tables (Data Source)
+
+The `postgresql_tables` data source retrieves a list of table names from a specified CockroachDB database.
+
+## Example Usage
+
+```hcl
+data "postgresql_tables" "my_tables" {
+  database = "my_database"
+}
+```
+
+Use `table_types = ["BASE TABLE"]` to retrieve only regular tables (excluding views and temporary tables).
+
+All optional filter arguments can be used in conjunction.
+
+{{ .SchemaMarkdown | trimspace }}

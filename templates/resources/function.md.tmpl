@@ -1,0 +1,45 @@
+---
+page_title: "postgresql_function Resource - terraform-provider-postgresql"
+subcategory: ""
+description: |-
+  Creates and manages a function on a CockroachDB server.
+---
+
+# postgresql_function (Resource)
+
+The `postgresql_function` resource creates and manages a function on a CockroachDB server.
+
+## Example Usage
+
+```hcl
+resource "postgresql_function" "increment" {
+  name = "increment"
+  arg {
+    name = "i"
+    type = "integer"
+  }
+  returns  = "integer"
+  language = "plpgsql"
+  body     = <<-EOF
+    BEGIN
+        RETURN i + 1;
+    END;
+  EOF
+}
+```
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+It is possible to import a `postgresql_function` resource with the following command:
+
+```shell
+terraform import postgresql_function.function_foo "my_database.my_schema.my_function_name(arguments)"
+```
+
+Where `my_database` is the name of the database containing the schema,
+`my_schema` is the name of the schema in the database, `my_function_name` is
+the function name to be imported, `arguments` is the argument signature of the
+function including all non OUT types, and `postgresql_function.function_foo` is
+the name of the resource whose state will be populated as a result of the command.
