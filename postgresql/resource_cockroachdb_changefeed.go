@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -379,7 +380,7 @@ func extractDetails(sql string) (string, string, string, string, string, int) {
 		compressionLevelRegex := regexp.MustCompile(`"CompressionLevel"\s*:\s*(\d+)`)
 		compressionLevelMatch := compressionLevelRegex.FindStringSubmatch(configStr)
 		if len(compressionLevelMatch) > 1 {
-			fmt.Sscanf(compressionLevelMatch[1], "%d", &compressionLevel)
+			compressionLevel, _ = strconv.Atoi(compressionLevelMatch[1])
 		}
 	}
 

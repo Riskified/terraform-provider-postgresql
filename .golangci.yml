@@ -1,5 +1,35 @@
+version: "2"
+
 issues:
-  exclude-rules:
-    - linters:
-        - errcheck
-      text: "Error return value of `d.Set` is not checked"
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        - (*github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema.ResourceData).Set
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1000" # package comments - not needed for Terraform providers
+        - "-ST1003" # naming conventions - too many pre-existing violations
+        - "-ST1005" # error strings should not be capitalized - too many pre-existing violations
+        - "-QF*"    # quickfix suggestions are noisy, not bugs
+  disable-all: true
+  enable:
+    - durationcheck
+    - errcheck
+    - copyloopvar
+    - ineffassign
+    - makezero
+    - nilerr
+    - staticcheck
+    - unused
+    - govet
+
+formatters:
+  enable:
+    - gofmt
