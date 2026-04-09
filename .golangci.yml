@@ -1,10 +1,15 @@
 version: "2"
 
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
-
 linters:
+  # Use default linters (errcheck, govet, ineffassign, staticcheck, unused)
+  # plus a few extras that catch real bugs.
+  enable:
+    - copyloopvar
+    - durationcheck
+    - makezero
+    - misspell
+    - nilerr
+    - unconvert
   settings:
     errcheck:
       exclude-functions:
@@ -14,21 +19,10 @@ linters:
     staticcheck:
       checks:
         - "all"
-        - "-ST1000" # package comments - not needed for Terraform providers
-        - "-ST1003" # naming conventions - too many pre-existing violations
-        - "-ST1005" # error strings should not be capitalized - too many pre-existing violations
-        - "-QF*"    # quickfix suggestions are noisy, not bugs
-  disable-all: true
-  enable:
-    - durationcheck
-    - errcheck
-    - copyloopvar
-    - ineffassign
-    - makezero
-    - nilerr
-    - staticcheck
-    - unused
-    - govet
+        - "-ST1000" # package comments - single-package Terraform provider
+        - "-ST1003" # naming conventions (sinkUri vs sinkURI) - pre-existing, fix separately
+        - "-ST1005" # capitalized error strings - pre-existing, fix separately
+        - "-QF*"    # quickfix suggestions - style, not bugs
 
 formatters:
   enable:
