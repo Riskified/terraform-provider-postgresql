@@ -18,6 +18,8 @@ const (
 	CDCRegistryConnectionName = "registry_connection_name"
 	CDCStartFrom              = "start_from"
 	CDCInitialScan            = "initial_scan"
+	CDCCompression            = "compression"
+	CDCCompressionLevel       = "compression_level"
 )
 
 func resourceCockroachDBChangefeed() *schema.Resource {
@@ -72,6 +74,21 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 				ValidateFunc: validation.StringInSlice([]string{"yes", "no"}, false),
 				ForceNew:     true,
 			},
+			CDCCompression: {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Default:      "NONE",
+				Description:  "Kafka sink compression codec. Valid values are NONE, GZIP, SNAPPY, LZ4, ZSTD.",
+				ValidateFunc: validation.StringInSlice([]string{"NONE", "GZIP", "SNAPPY", "LZ4", "ZSTD"}, true),
+				ForceNew:     true,
+			},
+			CDCCompressionLevel: {
+				Type:        schema.TypeInt,
+				Optional:    true,
+				Default:     0,
+				Description: "Kafka sink compression level. Defaults to 0 (fastest).",
+				ForceNew:    true,
+			},
 		},
 	}
 }
@@ -96,11 +113,22 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 	} else {
 		initialScanClause = "initial_scan = 'no',"
 	}
+	compression := d.Get(CDCCompression).(string)
+	compressionLevel := d.Get(CDCCompressionLevel).(int)
+
+	var kafkaSinkConfigClause string
+	if !strings.EqualFold(compression, "NONE") {
+		kafkaSinkConfigClause = fmt.Sprintf(
+			`, kafka_sink_config = '{"Compression": "%s", "CompressionLevel": %d}'`,
+			strings.ToUpper(compression), compressionLevel,
+		)
+	}
+
 	tableList := Interface2StringList(tableListInterface)
 	tableListStr := strings.Join(tableList, ", ")
 	sqlChangefeed := fmt.Sprintf(
-		`CREATE CHANGEFEED FOR TABLE %v INTO "external://%s" WITH %s updated, %s diff, on_error='pause', format = avro, avro_schema_prefix='%s_', confluent_schema_registry = 'external://%s'`,
-		tableListStr, kafkaConnectionName, initialScanClause, cursorClause, avroSchemaPrefix, registryConnectionName,
+		`CREATE CHANGEFEED FOR TABLE %v INTO "external://%s" WITH %s updated, %s diff, on_error='pause', format = avro, avro_schema_prefix='%s_', confluent_schema_registry = 'external://%s'%s`,
+		tableListStr, kafkaConnectionName, initialScanClause, cursorClause, avroSchemaPrefix, registryConnectionName, kafkaSinkConfigClause,
 	)
 	dbConn, err := connectToDatabase(db, database)
 	if err != nil {
@@ -154,7 +182,7 @@ func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceD
 	// setting the sink uri
 	d.Set(CDCKafkaConnectionName, strings.TrimPrefix(sinkUri, "external://"))
 	// setting the avro schema prefix and confluent schema registry
-	avroSchemaPrefix, confluentSchemaRegistry, initialScanValue, cursorValue := extractDetails(description)
+	avroSchemaPrefix, confluentSchemaRegistry, initialScanValue, cursorValue, compression, compressionLevel := extractDetails(description)
 	d.Set(CDCAvroSchemaPrefix, strings.TrimSuffix(avroSchemaPrefix, "_"))
 	d.Set(CDCRegistryConnectionName, confluentSchemaRegistry)
 	if initialScanValue == "yes" {
@@ -165,6 +193,12 @@ func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceD
 	if cursorValue != "" {
 		d.Set(CDCStartFrom, cursorValue)
 	}
+	if compression != "" {
+		d.Set(CDCCompression, compression)
+	} else {
+		d.Set(CDCCompression, "NONE")
+	}
+	d.Set(CDCCompressionLevel, compressionLevel)
 
 	return nil
 }
@@ -297,7 +331,7 @@ func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string, ti
 	}
 }
 
-func extractDetails(sql string) (string, string, string, string) {
+func extractDetails(sql string) (string, string, string, string, string, int) {
 	// Regular expression to extract the avro_schema_prefix
 	avroSchemaPrefixRegex := regexp.MustCompile(`avro_schema_prefix\s*=\s*'([^']*)'`)
 	avroSchemaPrefixMatch := avroSchemaPrefixRegex.FindStringSubmatch(sql)
@@ -330,7 +364,26 @@ func extractDetails(sql string) (string, string, string, string) {
 		cursor = cursorMatch[1]
 	}
 
-	return avroSchemaPrefix, confluentSchemaRegistry, initialScan, cursor
+	// Extract kafka_sink_config compression details
+	compression := ""
+	compressionLevel := 0
+	kafkaSinkConfigRegex := regexp.MustCompile(`kafka_sink_config\s*=\s*'([^']*)'`)
+	kafkaSinkConfigMatch := kafkaSinkConfigRegex.FindStringSubmatch(sql)
+	if len(kafkaSinkConfigMatch) > 1 {
+		configStr := kafkaSinkConfigMatch[1]
+		compressionRegex := regexp.MustCompile(`"Compression"\s*:\s*"([^"]*)"`)
+		compressionMatch := compressionRegex.FindStringSubmatch(configStr)
+		if len(compressionMatch) > 1 {
+			compression = strings.ToUpper(compressionMatch[1])
+		}
+		compressionLevelRegex := regexp.MustCompile(`"CompressionLevel"\s*:\s*(\d+)`)
+		compressionLevelMatch := compressionLevelRegex.FindStringSubmatch(configStr)
+		if len(compressionLevelMatch) > 1 {
+			fmt.Sscanf(compressionLevelMatch[1], "%d", &compressionLevel)
+		}
+	}
+
+	return avroSchemaPrefix, confluentSchemaRegistry, initialScan, cursor, compression, compressionLevel
 }
 
 func Interface2StringList(interfaceList interface{}) []string {
