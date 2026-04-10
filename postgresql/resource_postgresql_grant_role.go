@@ -1,7 +1,9 @@
 package postgresql
 
 import (
+	"database/sql"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
@@ -99,7 +101,13 @@ func readGrantRole(db *DBConnection, d *schema.ResourceData) error {
 
 	query := fmt.Sprintf(` with a as (show grants on role %s for %s) select member as role , role_name as grant_role, is_admin as with_admin_option from a;
 `, pq.QuoteIdentifier(d.Get("grant_role").(string)), pq.QuoteIdentifier(d.Get("role").(string)))
-	if err := db.QueryRow(query).Scan(values...); err != nil {
+	err := db.QueryRow(query).Scan(values...)
+	switch {
+	case err == sql.ErrNoRows:
+		log.Printf("[WARN] PostgreSQL grant role %s for %s not found, removing from state", d.Get("grant_role"), d.Get("role"))
+		d.SetId("")
+		return nil
+	case err != nil:
 		return fmt.Errorf("Error to show grants on role %s for %s :%w ", d.Get("grant_role"), d.Get("role"), err)
 	}
 

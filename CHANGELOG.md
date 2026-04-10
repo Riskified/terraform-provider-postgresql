@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.47.0 (April 10, 2026)
+
+### Bug Fixes
+
+- **role**: Fix role deletion failing when role owns objects in other databases — `REASSIGN OWNED BY` and `DROP OWNED BY` are now executed in every non-system database, not just the provider's default database ([DEV-128384](https://riskified.atlassian.net/browse/DEV-128384))
+- **grant_role**: Fix `postgresql_grant_role` read returning an error when the grant doesn't exist instead of removing the resource from state, causing plan failures on fresh databases ([DEV-128384](https://riskified.atlassian.net/browse/DEV-128384))
+
 ## 1.46.0  (April 10, 2026)
 
 ### Features
