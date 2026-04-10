@@ -1,0 +1,22 @@
+---
+page_title: "postgresql_sequences Data Source - terraform-provider-postgresql"
+subcategory: ""
+description: |-
+  Retrieves a list of sequence names from a CockroachDB database.
+---
+
+# postgresql_sequences (Data Source)
+
+The `postgresql_sequences` data source retrieves a list of sequence names from a specified CockroachDB database.
+
+## Example Usage
+
+```hcl
+data "postgresql_sequences" "my_sequences" {
+  database = "my_database"
+}
+```
+
+All optional filter arguments can be used in conjunction.
+
+{{ .SchemaMarkdown | trimspace }}

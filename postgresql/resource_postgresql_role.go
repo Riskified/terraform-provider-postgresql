@@ -691,7 +691,7 @@ func revokeRoles(db QueryAble, d *schema.ResourceData) error {
 
 		log.Printf("[DEBUG] revoking role %s from %s", grantedRole, role)
 		if _, err := db.Exec(query); err != nil {
-			return fmt.Errorf("could not revoke role %s from %s: %w", string(grantedRole), role, err)
+			return fmt.Errorf("could not revoke role %s from %s: %w", grantedRole, role, err)
 		}
 	}
 

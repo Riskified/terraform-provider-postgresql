@@ -99,50 +99,80 @@ func TestContains(t *testing.T) {
 
 func TestExtractDetails(t *testing.T) {
 	tests := []struct {
-		name                string
-		sql                 string
-		expectedAvroPrefix  string
-		expectedRegistry    string
-		expectedInitialScan string
-		expectedCursor      string
+		name                     string
+		sql                      string
+		expectedAvroPrefix       string
+		expectedRegistry         string
+		expectedInitialScan      string
+		expectedCursor           string
+		expectedCompression      string
+		expectedCompressionLevel int
 	}{
 		{
-			name:                "full description with cursor",
-			sql:                 `CREATE CHANGEFEED FOR TABLE mytable INTO "external://kafka-conn" WITH initial_scan = 'no', updated, cursor='2023-01-01 00:00:00', diff, on_error='pause', format = avro, avro_schema_prefix='myprefix_', confluent_schema_registry = 'external://registry-conn'`,
-			expectedAvroPrefix:  "myprefix_",
-			expectedRegistry:    "registry-conn",
-			expectedInitialScan: "no",
-			expectedCursor:      "2023-01-01 00:00:00",
+			name:                     "full description with cursor",
+			sql:                      `CREATE CHANGEFEED FOR TABLE mytable INTO "external://kafka-conn" WITH initial_scan = 'no', updated, cursor='2023-01-01 00:00:00', diff, on_error='pause', format = avro, avro_schema_prefix='myprefix_', confluent_schema_registry = 'external://registry-conn'`,
+			expectedAvroPrefix:       "myprefix_",
+			expectedRegistry:         "registry-conn",
+			expectedInitialScan:      "no",
+			expectedCursor:           "2023-01-01 00:00:00",
+			expectedCompression:      "",
+			expectedCompressionLevel: 0,
 		},
 		{
-			name:                "initial_scan yes, no cursor",
-			sql:                 `CREATE CHANGEFEED FOR TABLE mytable INTO "external://kafka-conn" WITH initial_scan = 'yes', updated, format = avro, avro_schema_prefix='test_', confluent_schema_registry = 'external://reg-conn'`,
-			expectedAvroPrefix:  "test_",
-			expectedRegistry:    "reg-conn",
-			expectedInitialScan: "yes",
-			expectedCursor:      "",
+			name:                     "initial_scan yes, no cursor",
+			sql:                      `CREATE CHANGEFEED FOR TABLE mytable INTO "external://kafka-conn" WITH initial_scan = 'yes', updated, format = avro, avro_schema_prefix='test_', confluent_schema_registry = 'external://reg-conn'`,
+			expectedAvroPrefix:       "test_",
+			expectedRegistry:         "reg-conn",
+			expectedInitialScan:      "yes",
+			expectedCursor:           "",
+			expectedCompression:      "",
+			expectedCompressionLevel: 0,
 		},
 		{
-			name:                "empty sql",
-			sql:                 "",
-			expectedAvroPrefix:  "",
-			expectedRegistry:    "",
-			expectedInitialScan: "",
-			expectedCursor:      "",
+			name:                     "empty sql",
+			sql:                      "",
+			expectedAvroPrefix:       "",
+			expectedRegistry:         "",
+			expectedInitialScan:      "",
+			expectedCursor:           "",
+			expectedCompression:      "",
+			expectedCompressionLevel: 0,
 		},
 		{
-			name:                "prefix with underscore suffix",
-			sql:                 `avro_schema_prefix='my_service_', confluent_schema_registry = 'external://my-registry'`,
-			expectedAvroPrefix:  "my_service_",
-			expectedRegistry:    "my-registry",
-			expectedInitialScan: "",
-			expectedCursor:      "",
+			name:                     "prefix with underscore suffix",
+			sql:                      `avro_schema_prefix='my_service_', confluent_schema_registry = 'external://my-registry'`,
+			expectedAvroPrefix:       "my_service_",
+			expectedRegistry:         "my-registry",
+			expectedInitialScan:      "",
+			expectedCursor:           "",
+			expectedCompression:      "",
+			expectedCompressionLevel: 0,
+		},
+		{
+			name:                     "with LZ4 compression",
+			sql:                      `CREATE CHANGEFEED FOR TABLE mytable INTO "external://kafka-conn" WITH initial_scan = 'no', updated, diff, on_error='pause', format = avro, avro_schema_prefix='myprefix_', confluent_schema_registry = 'external://registry-conn', kafka_sink_config = '{"Compression": "LZ4", "CompressionLevel": 0}'`,
+			expectedAvroPrefix:       "myprefix_",
+			expectedRegistry:         "registry-conn",
+			expectedInitialScan:      "no",
+			expectedCursor:           "",
+			expectedCompression:      "LZ4",
+			expectedCompressionLevel: 0,
+		},
+		{
+			name:                     "with GZIP compression level 5",
+			sql:                      `CREATE CHANGEFEED FOR TABLE mytable INTO "external://kafka-conn" WITH initial_scan = 'no', updated, diff, on_error='pause', format = avro, avro_schema_prefix='gzprefix_', confluent_schema_registry = 'external://registry-conn', kafka_sink_config = '{"Compression": "GZIP", "CompressionLevel": 5}'`,
+			expectedAvroPrefix:       "gzprefix_",
+			expectedRegistry:         "registry-conn",
+			expectedInitialScan:      "no",
+			expectedCursor:           "",
+			expectedCompression:      "GZIP",
+			expectedCompressionLevel: 5,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prefix, registry, initialScan, cursor := extractDetails(tt.sql)
+			prefix, registry, initialScan, cursor, compression, compressionLevel := extractDetails(tt.sql)
 			if prefix != tt.expectedAvroPrefix {
 				t.Errorf("extractDetails() avroPrefix = %q, want %q", prefix, tt.expectedAvroPrefix)
 			}
@@ -154,6 +184,12 @@ func TestExtractDetails(t *testing.T) {
 			}
 			if cursor != tt.expectedCursor {
 				t.Errorf("extractDetails() cursor = %q, want %q", cursor, tt.expectedCursor)
+			}
+			if compression != tt.expectedCompression {
+				t.Errorf("extractDetails() compression = %q, want %q", compression, tt.expectedCompression)
+			}
+			if compressionLevel != tt.expectedCompressionLevel {
+				t.Errorf("extractDetails() compressionLevel = %d, want %d", compressionLevel, tt.expectedCompressionLevel)
 			}
 		})
 	}

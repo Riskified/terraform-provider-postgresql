@@ -1,5 +1,29 @@
-issues:
-  exclude-rules:
-    - linters:
-        - errcheck
-      text: "Error return value of `d.Set` is not checked"
+version: "2"
+
+linters:
+  # Use default linters (errcheck, govet, ineffassign, staticcheck, unused)
+  # plus a few extras that catch real bugs.
+  enable:
+    - copyloopvar
+    - durationcheck
+    - makezero
+    - misspell
+    - nilerr
+    - unconvert
+  settings:
+    errcheck:
+      exclude-functions:
+        - (*github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema.ResourceData).Set
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1000" # package comments - single-package Terraform provider
+        - "-ST1003" # naming conventions (sinkUri vs sinkURI) - pre-existing, fix separately
+        - "-ST1005" # capitalized error strings - pre-existing, fix separately
+        - "-QF*"    # quickfix suggestions - style, not bugs
+
+formatters:
+  enable:
+    - gofmt

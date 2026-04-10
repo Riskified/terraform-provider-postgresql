@@ -498,7 +498,7 @@ func validateFeatureSupport(db *DBConnection, d *schema.ResourceData) error {
 	}
 	if d.Get("object_type") == "system" && !db.featureSupported(featureSysPrivileges) {
 		return fmt.Errorf(
-			"privelege type System is not supported for this version (%s)",
+			"privilege type System is not supported for this version (%s)",
 			db.version,
 		)
 	}
