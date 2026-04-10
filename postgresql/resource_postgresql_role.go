@@ -259,11 +259,25 @@ func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) erro
 
 	if !d.Get(roleSkipReassignOwnedAttr).(bool) {
 		currentUser := db.client.config.getDatabaseUsername()
-		if _, err := db.Exec(fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(currentUser))); err != nil {
-			return fmt.Errorf("could not reassign owned by role %s to %s: %w", roleName, currentUser, err)
+
+		// REASSIGN OWNED BY and DROP OWNED BY are database-scoped, so we need
+		// to run them in every database where the role might own objects.
+		databases, err := getDatabases(db)
+		if err != nil {
+			return fmt.Errorf("could not list databases for role %s cleanup: %w", roleName, err)
 		}
-		if _, err := db.Exec(fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(roleName))); err != nil {
-			return fmt.Errorf("could not drop owned by role %s: %w", roleName, err)
+
+		for _, database := range databases {
+			dbConn, err := connectToDatabase(db, database)
+			if err != nil {
+				return fmt.Errorf("could not connect to database %s to reassign owned by role %s: %w", database, roleName, err)
+			}
+			if _, err := dbConn.Exec(fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(currentUser))); err != nil {
+				return fmt.Errorf("could not reassign owned by role %s to %s in database %s: %w", roleName, currentUser, database, err)
+			}
+			if _, err := dbConn.Exec(fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(roleName))); err != nil {
+				return fmt.Errorf("could not drop owned by role %s in database %s: %w", roleName, database, err)
+			}
 		}
 	}
 	if !d.Get(roleSkipDropRoleAttr).(bool) {

@@ -227,6 +227,27 @@ func connectToDatabase(db *DBConnection, database string) (*DBConnection, error)
 	return db.client.config.NewClient(database).Connect()
 }
 
+// getDatabases returns the names of all non-template, non-system databases.
+// The CockroachDB "system" database is excluded because it uses the legacy
+// schema changer which does not support DROP OWNED BY.
+func getDatabases(db QueryAble) ([]string, error) {
+	rows, err := db.Query("SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'system'")
+	if err != nil {
+		return nil, fmt.Errorf("could not list databases: %w", err)
+	}
+	defer rows.Close()
+
+	var databases []string
+	for rows.Next() {
+		var dbname string
+		if err := rows.Scan(&dbname); err != nil {
+			return nil, fmt.Errorf("could not scan database name: %w", err)
+		}
+		databases = append(databases, dbname)
+	}
+	return databases, rows.Err()
+}
+
 func dbExists(db QueryAble, dbname string) (bool, error) {
 	err := db.QueryRow("SELECT datname FROM pg_database WHERE datname=$1", dbname).Scan(&dbname)
 	switch {
