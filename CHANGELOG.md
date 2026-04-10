@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.57.0 (April 10, 2026)
+## 1.47.0 (April 10, 2026)
 
 ### Bug Fixes
 
