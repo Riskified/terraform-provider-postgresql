@@ -56,7 +56,9 @@ resource "postgresql_crdb_changefeed" "compressed" {
 - `compression` (String) Kafka sink compression codec. Valid values are NONE, GZIP, SNAPPY, LZ4, ZSTD.
 - `compression_level` (Number) Kafka sink compression level. Defaults to 0 (fastest).
 - `initial_scan` (String) cdc initial scan
+- `key_column` (String) Column name to use as the changefeed message key instead of the primary key.
 - `start_from` (String) cdc start from cursor
+- `unordered` (Boolean) Whether the changefeed is unordered. Must be true when key_column is set.
 
 ### Read-Only
 

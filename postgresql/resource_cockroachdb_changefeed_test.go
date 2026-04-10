@@ -107,6 +107,8 @@ func TestExtractDetails(t *testing.T) {
 		expectedCursor           string
 		expectedCompression      string
 		expectedCompressionLevel int
+		expectedKeyColumn        string
+		expectedUnordered        bool
 	}{
 		{
 			name:                     "full description with cursor",
@@ -117,6 +119,8 @@ func TestExtractDetails(t *testing.T) {
 			expectedCursor:           "2023-01-01 00:00:00",
 			expectedCompression:      "",
 			expectedCompressionLevel: 0,
+			expectedKeyColumn:        "",
+			expectedUnordered:        false,
 		},
 		{
 			name:                     "initial_scan yes, no cursor",
@@ -127,6 +131,8 @@ func TestExtractDetails(t *testing.T) {
 			expectedCursor:           "",
 			expectedCompression:      "",
 			expectedCompressionLevel: 0,
+			expectedKeyColumn:        "",
+			expectedUnordered:        false,
 		},
 		{
 			name:                     "empty sql",
@@ -137,6 +143,8 @@ func TestExtractDetails(t *testing.T) {
 			expectedCursor:           "",
 			expectedCompression:      "",
 			expectedCompressionLevel: 0,
+			expectedKeyColumn:        "",
+			expectedUnordered:        false,
 		},
 		{
 			name:                     "prefix with underscore suffix",
@@ -147,6 +155,8 @@ func TestExtractDetails(t *testing.T) {
 			expectedCursor:           "",
 			expectedCompression:      "",
 			expectedCompressionLevel: 0,
+			expectedKeyColumn:        "",
+			expectedUnordered:        false,
 		},
 		{
 			name:                     "with LZ4 compression",
@@ -157,6 +167,8 @@ func TestExtractDetails(t *testing.T) {
 			expectedCursor:           "",
 			expectedCompression:      "LZ4",
 			expectedCompressionLevel: 0,
+			expectedKeyColumn:        "",
+			expectedUnordered:        false,
 		},
 		{
 			name:                     "with GZIP compression level 5",
@@ -167,12 +179,50 @@ func TestExtractDetails(t *testing.T) {
 			expectedCursor:           "",
 			expectedCompression:      "GZIP",
 			expectedCompressionLevel: 5,
+			expectedKeyColumn:        "",
+			expectedUnordered:        false,
+		},
+		{
+			name:                     "with key_column and unordered",
+			sql:                      `CREATE CHANGEFEED FOR TABLE outbox_events INTO 'external://kafka_crdb_cdc_chargeback_service_db_all_public' WITH OPTIONS (avro_schema_prefix = 'crdb_cdc_chargeback_service_db_all_public_', confluent_schema_registry = 'external://schema_registry_crdb_cdc_general_all_public', diff, format = 'avro', initial_scan = 'yes', key_column = 'aggregate_id', on_error = 'pause', unordered, updated)`,
+			expectedAvroPrefix:       "crdb_cdc_chargeback_service_db_all_public_",
+			expectedRegistry:         "schema_registry_crdb_cdc_general_all_public",
+			expectedInitialScan:      "yes",
+			expectedCursor:           "",
+			expectedCompression:      "",
+			expectedCompressionLevel: 0,
+			expectedKeyColumn:        "aggregate_id",
+			expectedUnordered:        true,
+		},
+		{
+			name:                     "with key_column without unordered",
+			sql:                      `CREATE CHANGEFEED FOR TABLE mytable INTO "external://kafka-conn" WITH initial_scan = 'no', updated, diff, on_error='pause', format = avro, avro_schema_prefix='myprefix_', confluent_schema_registry = 'external://registry-conn', key_column = 'my_col'`,
+			expectedAvroPrefix:       "myprefix_",
+			expectedRegistry:         "registry-conn",
+			expectedInitialScan:      "no",
+			expectedCursor:           "",
+			expectedCompression:      "",
+			expectedCompressionLevel: 0,
+			expectedKeyColumn:        "my_col",
+			expectedUnordered:        false,
+		},
+		{
+			name:                     "with unordered only",
+			sql:                      `CREATE CHANGEFEED FOR TABLE mytable INTO "external://kafka-conn" WITH initial_scan = 'no', updated, diff, on_error='pause', format = avro, avro_schema_prefix='myprefix_', confluent_schema_registry = 'external://registry-conn', unordered`,
+			expectedAvroPrefix:       "myprefix_",
+			expectedRegistry:         "registry-conn",
+			expectedInitialScan:      "no",
+			expectedCursor:           "",
+			expectedCompression:      "",
+			expectedCompressionLevel: 0,
+			expectedKeyColumn:        "",
+			expectedUnordered:        true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prefix, registry, initialScan, cursor, compression, compressionLevel := extractDetails(tt.sql)
+			prefix, registry, initialScan, cursor, compression, compressionLevel, keyColumn, unordered := extractDetails(tt.sql)
 			if prefix != tt.expectedAvroPrefix {
 				t.Errorf("extractDetails() avroPrefix = %q, want %q", prefix, tt.expectedAvroPrefix)
 			}
@@ -190,6 +240,12 @@ func TestExtractDetails(t *testing.T) {
 			}
 			if compressionLevel != tt.expectedCompressionLevel {
 				t.Errorf("extractDetails() compressionLevel = %d, want %d", compressionLevel, tt.expectedCompressionLevel)
+			}
+			if keyColumn != tt.expectedKeyColumn {
+				t.Errorf("extractDetails() keyColumn = %q, want %q", keyColumn, tt.expectedKeyColumn)
+			}
+			if unordered != tt.expectedUnordered {
+				t.Errorf("extractDetails() unordered = %v, want %v", unordered, tt.expectedUnordered)
 			}
 		})
 	}

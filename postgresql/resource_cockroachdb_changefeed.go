@@ -21,6 +21,8 @@ const (
 	CDCInitialScan            = "initial_scan"
 	CDCCompression            = "compression"
 	CDCCompressionLevel       = "compression_level"
+	CDCKeyColumn              = "key_column"
+	CDCUnordered              = "unordered"
 )
 
 func resourceCockroachDBChangefeed() *schema.Resource {
@@ -90,6 +92,19 @@ func resourceCockroachDBChangefeed() *schema.Resource {
 				Description: "Kafka sink compression level. Defaults to 0 (fastest).",
 				ForceNew:    true,
 			},
+			CDCKeyColumn: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Column name to use as the changefeed message key instead of the primary key.",
+				ForceNew:    true,
+			},
+			CDCUnordered: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "Whether the changefeed is unordered. Must be true when key_column is set.",
+				ForceNew:    true,
+			},
 		},
 	}
 }
@@ -100,6 +115,12 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 	registryConnectionName := d.Get(CDCRegistryConnectionName).(string)
 	avroSchemaPrefix := d.Get(CDCAvroSchemaPrefix).(string)
 	startFrom := d.Get(CDCStartFrom).(string)
+	keyColumn := d.Get(CDCKeyColumn).(string)
+	unordered := d.Get(CDCUnordered).(bool)
+
+	if keyColumn != "" && !unordered {
+		return fmt.Errorf("unordered must be true when key_column is set")
+	}
 
 	database := db.client.databaseName
 
@@ -125,11 +146,21 @@ func resourceCockroachDBChangefeedCreate(db *DBConnection, d *schema.ResourceDat
 		)
 	}
 
+	var keyColumnClause string
+	if keyColumn != "" {
+		keyColumnClause = fmt.Sprintf(", key_column = '%s'", keyColumn)
+	}
+
+	var unorderedClause string
+	if unordered {
+		unorderedClause = ", unordered"
+	}
+
 	tableList := Interface2StringList(tableListInterface)
 	tableListStr := strings.Join(tableList, ", ")
 	sqlChangefeed := fmt.Sprintf(
-		`CREATE CHANGEFEED FOR TABLE %v INTO "external://%s" WITH %s updated, %s diff, on_error='pause', format = avro, avro_schema_prefix='%s_', confluent_schema_registry = 'external://%s'%s`,
-		tableListStr, kafkaConnectionName, initialScanClause, cursorClause, avroSchemaPrefix, registryConnectionName, kafkaSinkConfigClause,
+		`CREATE CHANGEFEED FOR TABLE %v INTO "external://%s" WITH %s updated, %s diff, on_error='pause', format = avro, avro_schema_prefix='%s_', confluent_schema_registry = 'external://%s'%s%s%s`,
+		tableListStr, kafkaConnectionName, initialScanClause, cursorClause, avroSchemaPrefix, registryConnectionName, kafkaSinkConfigClause, keyColumnClause, unorderedClause,
 	)
 	dbConn, err := connectToDatabase(db, database)
 	if err != nil {
@@ -183,7 +214,7 @@ func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceD
 	// setting the sink uri
 	d.Set(CDCKafkaConnectionName, strings.TrimPrefix(sinkUri, "external://"))
 	// setting the avro schema prefix and confluent schema registry
-	avroSchemaPrefix, confluentSchemaRegistry, initialScanValue, cursorValue, compression, compressionLevel := extractDetails(description)
+	avroSchemaPrefix, confluentSchemaRegistry, initialScanValue, cursorValue, compression, compressionLevel, keyColumn, unordered := extractDetails(description)
 	d.Set(CDCAvroSchemaPrefix, strings.TrimSuffix(avroSchemaPrefix, "_"))
 	d.Set(CDCRegistryConnectionName, confluentSchemaRegistry)
 	if initialScanValue == "yes" {
@@ -200,6 +231,8 @@ func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceD
 		d.Set(CDCCompression, "NONE")
 	}
 	d.Set(CDCCompressionLevel, compressionLevel)
+	d.Set(CDCKeyColumn, keyColumn)
+	d.Set(CDCUnordered, unordered)
 
 	return nil
 }
@@ -332,7 +365,7 @@ func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string, ti
 	}
 }
 
-func extractDetails(sql string) (string, string, string, string, string, int) {
+func extractDetails(sql string) (string, string, string, string, string, int, string, bool) {
 	// Regular expression to extract the avro_schema_prefix
 	avroSchemaPrefixRegex := regexp.MustCompile(`avro_schema_prefix\s*=\s*'([^']*)'`)
 	avroSchemaPrefixMatch := avroSchemaPrefixRegex.FindStringSubmatch(sql)
@@ -384,7 +417,19 @@ func extractDetails(sql string) (string, string, string, string, string, int) {
 		}
 	}
 
-	return avroSchemaPrefix, confluentSchemaRegistry, initialScan, cursor, compression, compressionLevel
+	// Extract key_column
+	keyColumnRegex := regexp.MustCompile(`key_column\s*=\s*'([^']*)'`)
+	keyColumnMatch := keyColumnRegex.FindStringSubmatch(sql)
+	keyColumn := ""
+	if len(keyColumnMatch) > 1 {
+		keyColumn = keyColumnMatch[1]
+	}
+
+	// Check for unordered option
+	unorderedRegex := regexp.MustCompile(`(?:^|[,\s])unordered(?:$|[,\s])`)
+	unordered := unorderedRegex.MatchString(sql)
+
+	return avroSchemaPrefix, confluentSchemaRegistry, initialScan, cursor, compression, compressionLevel, keyColumn, unordered
 }
 
 func Interface2StringList(interfaceList interface{}) []string {
