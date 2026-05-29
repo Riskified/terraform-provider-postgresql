@@ -172,7 +172,7 @@ func readSystemRolePriviges(db QueryAble, role string) error {
 	var query string
 	var privileges pq.ByteaArray
 	query = fmt.Sprintf(`with a as (show system grants for %s) select array_agg(privilege_type) from a`, role)
-	if err := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&privileges) }, query); err != nil {
+	if err := db.QueryRowRetry(query).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read system privileges: %w", err)
 	}
 	return nil
@@ -182,7 +182,7 @@ func readDatabaseRolePriviges(db QueryAble, d *schema.ResourceData, role string)
 	dbName := d.Get("database").(string)
 	var privileges pq.ByteaArray
 	query := fmt.Sprintf(`with a as (show grants on database %s for %s) select array_agg(privilege_type) from a where grantee=%s`, pq.QuoteIdentifier(dbName), pq.QuoteIdentifier(role), pq.QuoteLiteral(role))
-	if err := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&privileges) }, query); err != nil {
+	if err := db.QueryRowRetry(query).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 	}
 
@@ -194,7 +194,7 @@ func readSchemaRolePriviges(db QueryAble, d *schema.ResourceData, role string) e
 	schemaName := d.Get("schema").(string)
 	var privileges pq.ByteaArray
 	query := fmt.Sprintf(`with a as ( show grants on schema %s for %s) select array_agg(privilege_type) from a where grantee=%s;`, pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(role), pq.QuoteLiteral(role))
-	if err := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&privileges) }, query); err != nil {
+	if err := db.QueryRowRetry(query).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read privileges for schema %s: %w", schemaName, err)
 	}
 

@@ -136,12 +136,25 @@ func (db *DBConnection) QueryRetry(query string, args ...interface{}) (*sql.Rows
 	return rows, err
 }
 
-// QueryRowRetry wraps db.QueryRow. Because lib/pq defers query execution until
-// Scan(), we run the actual query+scan inside the retry by accepting a scan
-// closure. The closure must populate the destination from the row.
-func (db *DBConnection) QueryRowRetry(scan func(*sql.Row) error, query string, args ...interface{}) error {
-	return db.retry("QueryRow", func() error {
-		return scan(db.DB.QueryRow(query, args...))
+// RetryRow defers query+scan until Scan() is called so the whole network
+// round-trip can be retried as a unit. Mirrors *sql.Row's Scan signature so
+// QueryRowRetry is a drop-in replacement for QueryRow.
+type RetryRow struct {
+	db    *DBConnection
+	query string
+	args  []interface{}
+}
+
+// QueryRowRetry returns a RetryRow whose Scan retries transient errors.
+func (db *DBConnection) QueryRowRetry(query string, args ...interface{}) *RetryRow {
+	return &RetryRow{db: db, query: query, args: args}
+}
+
+// Scan executes the deferred query and scans the resulting row into dest,
+// retrying on transient errors. sql.ErrNoRows is returned unchanged.
+func (r *RetryRow) Scan(dest ...interface{}) error {
+	return r.db.retry("QueryRow", func() error {
+		return r.db.DB.QueryRow(r.query, r.args...).Scan(dest...)
 	})
 }
 

@@ -228,7 +228,7 @@ func resourcePostgreSQLFunctionExists(db *DBConnection, d *schema.ResourceData) 
 
 	query := fmt.Sprintf("SELECT to_regprocedure('%s') IS NOT NULL AS functionExists", functionSignature)
 
-	if err := dbConn.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&functionExists) }, query); err != nil {
+	if err := dbConn.QueryRowRetry(query).Scan(&functionExists); err != nil {
 		return false, err
 	}
 
@@ -275,7 +275,7 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		return err
 	}
 
-	err = dbConn.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&funcDefinition) }, query, functionSignature)
+	err = dbConn.QueryRowRetry(query, functionSignature).Scan(&funcDefinition)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL function: %s", functionId)

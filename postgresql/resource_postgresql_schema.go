@@ -94,9 +94,8 @@ func createSchemaWithDB(db *DBConnection, d *schema.ResourceData) error {
 	// Check if previous tasks haven't already created schema
 	var foundSchema bool
 	err := db.QueryRowRetry(
-		func(r *sql.Row) error { return r.Scan(&foundSchema) },
 		`SELECT TRUE FROM pg_catalog.pg_namespace WHERE nspname = $1`, schemaName,
-	)
+	).Scan(&foundSchema)
 
 	queries := []string{}
 	switch {
@@ -209,9 +208,8 @@ func resourcePostgreSQLSchemaExists(db *DBConnection, d *schema.ResourceData) (b
 	}
 
 	err = dbConn.QueryRowRetry(
-		func(r *sql.Row) error { return r.Scan(&schemaName) },
 		"SELECT n.nspname FROM pg_catalog.pg_namespace n WHERE n.nspname=$1", schemaName,
-	)
+	).Scan(&schemaName)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -239,9 +237,8 @@ func resourcePostgreSQLSchemaReadImpl(db *DBConnection, d *schema.ResourceData) 
 
 	var schemaOwner string
 	err = dbConn.QueryRowRetry(
-		func(r *sql.Row) error { return r.Scan(&schemaOwner) },
 		"SELECT pg_catalog.pg_get_userbyid(n.nspowner) FROM pg_catalog.pg_namespace n WHERE n.nspname=$1", schemaName,
-	)
+	).Scan(&schemaOwner)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL schema (%s) not found in database %s", schemaName, database)

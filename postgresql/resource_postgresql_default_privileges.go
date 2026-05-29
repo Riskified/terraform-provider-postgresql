@@ -1,7 +1,6 @@
 package postgresql
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
 	"strings"
@@ -264,7 +263,7 @@ func readRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) e
 	query = fmt.Sprintf("with a as (show DEFAULT PRIVILEGES for role %s %s) select array_agg(privilege_type) from a where grantee = '%s' and %s;", owner, inSchema, role, objectTypeClause)
 
 	var privileges pq.ByteaArray
-	if err := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&privileges) }, query); err != nil {
+	if err := db.QueryRowRetry(query).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read default privileges: %w", err)
 	}
 

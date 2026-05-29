@@ -43,7 +43,7 @@ type QueryAble interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 	QueryRow(query string, args ...interface{}) *sql.Row
 	QueryRetry(query string, args ...interface{}) (*sql.Rows, error)
-	QueryRowRetry(scan func(*sql.Row) error, query string, args ...interface{}) error
+	QueryRowRetry(query string, args ...interface{}) *RetryRow
 	ExecRetry(query string, args ...interface{}) (sql.Result, error)
 }
 
@@ -60,10 +60,9 @@ func pqQuoteLiteral(in string) string {
 func isMemberOfRole(db QueryAble, role, member string) (bool, error) {
 	var _rez int
 	err := db.QueryRowRetry(
-		func(r *sql.Row) error { return r.Scan(&_rez) },
 		"SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2",
 		role, member,
-	)
+	).Scan(&_rez)
 
 	switch {
 	case err == sql.ErrNoRows:
@@ -254,9 +253,8 @@ func getDatabases(db QueryAble) ([]string, error) {
 
 func dbExists(db QueryAble, dbname string) (bool, error) {
 	err := db.QueryRowRetry(
-		func(r *sql.Row) error { return r.Scan(&dbname) },
 		"SELECT datname FROM pg_database WHERE datname=$1", dbname,
-	)
+	).Scan(&dbname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -269,9 +267,8 @@ func dbExists(db QueryAble, dbname string) (bool, error) {
 
 func roleExists(db QueryAble, rolname string) (bool, error) {
 	err := db.QueryRowRetry(
-		func(r *sql.Row) error { return r.Scan(&rolname) },
 		"SELECT 1 FROM pg_roles WHERE rolname=$1", rolname,
-	)
+	).Scan(&rolname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -284,9 +281,8 @@ func roleExists(db QueryAble, rolname string) (bool, error) {
 
 func schemaExists(db QueryAble, schemaname string) (bool, error) {
 	err := db.QueryRowRetry(
-		func(r *sql.Row) error { return r.Scan(&schemaname) },
 		"SELECT 1 FROM pg_namespace WHERE nspname=$1", schemaname,
-	)
+	).Scan(&schemaname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -299,9 +295,8 @@ func schemaExists(db QueryAble, schemaname string) (bool, error) {
 
 func schemaExistsWithDB(db *DBConnection, schemaname string) (bool, error) {
 	err := db.QueryRowRetry(
-		func(r *sql.Row) error { return r.Scan(&schemaname) },
 		"SELECT 1 FROM pg_namespace WHERE nspname=$1", schemaname,
-	)
+	).Scan(&schemaname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
