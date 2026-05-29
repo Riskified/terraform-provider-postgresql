@@ -293,7 +293,10 @@ func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) erro
 
 func resourcePostgreSQLRoleExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
 	var roleName string
-	err := db.QueryRow("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname=$1", d.Id()).Scan(&roleName)
+	err := db.QueryRowRetry(
+		func(r *sql.Row) error { return r.Scan(&roleName) },
+		"SELECT rolname FROM pg_catalog.pg_roles WHERE rolname=$1", d.Id(),
+	)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -345,7 +348,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 		// select columns
 		strings.Join(columns, ", "),
 	)
-	err := db.QueryRow(roleSQL, roleID).Scan(values...)
+	err := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(values...) }, roleSQL, roleID)
 
 	switch {
 	case err == sql.ErrNoRows:
@@ -361,7 +364,8 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	var roleConfig pq.ByteaArray
 	settingSQL := `SELECT setconfig FROM pg_catalog.pg_db_role_setting
 		WHERE setrole = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname=$1) AND setdatabase = 0`
-	if settingErr := db.QueryRow(settingSQL, roleID).Scan(&roleConfig); settingErr != nil && settingErr != sql.ErrNoRows {
+	settingErr := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&roleConfig) }, settingSQL, roleID)
+	if settingErr != nil && settingErr != sql.ErrNoRows {
 		return fmt.Errorf("Error reading role settings from pg_db_role_setting: %w", settingErr)
 	}
 	// If settingErr == sql.ErrNoRows, roleConfig remains nil — no settings configured.
@@ -681,7 +685,7 @@ func revokeRoles(db QueryAble, d *schema.ResourceData) error {
 		JOIN pg_catalog.pg_roles ON members.member = pg_roles.oid
 		WHERE rolname = $1`
 
-	rows, err := db.Query(query, role)
+	rows, err := db.QueryRetry(query, role)
 	if err != nil {
 		return fmt.Errorf("could not get roles list for role %s: %w", role, err)
 	}

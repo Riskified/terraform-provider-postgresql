@@ -101,7 +101,7 @@ func readGrantRole(db *DBConnection, d *schema.ResourceData) error {
 
 	query := fmt.Sprintf(` with a as (show grants on role %s for %s) select member as role , role_name as grant_role, is_admin as with_admin_option from a;
 `, pq.QuoteIdentifier(d.Get("grant_role").(string)), pq.QuoteIdentifier(d.Get("role").(string)))
-	err := db.QueryRow(query).Scan(values...)
+	err := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(values...) }, query)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL grant role %s for %s not found, removing from state", d.Get("grant_role"), d.Get("role"))
@@ -144,7 +144,7 @@ func createRevokeRoleQuery(d *schema.ResourceData) string {
 // grantRoleWithDB grants a role using the DB connection directly
 func grantRoleWithDB(db *DBConnection, d *schema.ResourceData) error {
 	query := createGrantRoleQuery(d)
-	if _, err := db.Exec(query); err != nil {
+	if _, err := db.ExecRetry(query); err != nil {
 		return fmt.Errorf("could not execute grant query: %w", err)
 	}
 	return nil
@@ -153,7 +153,7 @@ func grantRoleWithDB(db *DBConnection, d *schema.ResourceData) error {
 // revokeRoleWithDB revokes a role using the DB connection directly
 func revokeRoleWithDB(db *DBConnection, d *schema.ResourceData) error {
 	query := createRevokeRoleQuery(d)
-	if _, err := db.Exec(query); err != nil {
+	if _, err := db.ExecRetry(query); err != nil {
 		// Ignore error if the role is not a member (for CockroachDB compatibility)
 		if !strings.Contains(err.Error(), "is not a member") {
 			return fmt.Errorf("could not execute revoke query: %w", err)

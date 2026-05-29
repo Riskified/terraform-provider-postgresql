@@ -193,7 +193,10 @@ func resourceCockroachDBChangefeedRead(db *DBConnection, d *schema.ResourceData)
 func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceData) error {
 	jobID := d.Id()
 	var sinkUri, jobTableString, description string
-	err := db.QueryRow(fmt.Sprintf("select sink_uri,topics,description from [show changefeed job %s];", jobID)).Scan(&sinkUri, &jobTableString, &description)
+	err := db.QueryRowRetry(
+		func(r *sql.Row) error { return r.Scan(&sinkUri, &jobTableString, &description) },
+		fmt.Sprintf("select sink_uri,topics,description from [show changefeed job %s];", jobID),
+	)
 	if err != nil {
 		return fmt.Errorf("Can't retrieve job details: %w", err)
 	}
@@ -300,7 +303,10 @@ func jobExists(db QueryAble, jobID string) (bool, error) {
 	var jobIDExists string
 	// Consider changefeed as existing when running or paused so that
 	// Terraform plans update in-place (or drop+create) instead of "object will be created".
-	err := db.QueryRow(fmt.Sprintf("SELECT job_id FROM [SHOW changefeed JOB %s] WHERE status IN ('running', 'paused');", jobID)).Scan(&jobIDExists)
+	err := db.QueryRowRetry(
+		func(r *sql.Row) error { return r.Scan(&jobIDExists) },
+		fmt.Sprintf("SELECT job_id FROM [SHOW changefeed JOB %s] WHERE status IN ('running', 'paused');", jobID),
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
@@ -354,7 +360,7 @@ func waitForJobStatus(db *DBConnection, jobID string, requestedStatus string, ti
 		case <-ticker.C:
 			var status string
 			query := fmt.Sprintf("SELECT status FROM [SHOW JOB %s]", jobID)
-			if err := db.QueryRow(query).Scan(&status); err != nil {
+			if err := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&status) }, query); err != nil {
 				return fmt.Errorf("error querying job status: %w", err)
 			}
 

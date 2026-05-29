@@ -172,7 +172,7 @@ func readSystemRolePriviges(db QueryAble, role string) error {
 	var query string
 	var privileges pq.ByteaArray
 	query = fmt.Sprintf(`with a as (show system grants for %s) select array_agg(privilege_type) from a`, role)
-	if err := db.QueryRow(query).Scan(&privileges); err != nil {
+	if err := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&privileges) }, query); err != nil {
 		return fmt.Errorf("could not read system privileges: %w", err)
 	}
 	return nil
@@ -182,7 +182,7 @@ func readDatabaseRolePriviges(db QueryAble, d *schema.ResourceData, role string)
 	dbName := d.Get("database").(string)
 	var privileges pq.ByteaArray
 	query := fmt.Sprintf(`with a as (show grants on database %s for %s) select array_agg(privilege_type) from a where grantee=%s`, pq.QuoteIdentifier(dbName), pq.QuoteIdentifier(role), pq.QuoteLiteral(role))
-	if err := db.QueryRow(query).Scan(&privileges); err != nil {
+	if err := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&privileges) }, query); err != nil {
 		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 	}
 
@@ -194,7 +194,7 @@ func readSchemaRolePriviges(db QueryAble, d *schema.ResourceData, role string) e
 	schemaName := d.Get("schema").(string)
 	var privileges pq.ByteaArray
 	query := fmt.Sprintf(`with a as ( show grants on schema %s for %s) select array_agg(privilege_type) from a where grantee=%s;`, pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(role), pq.QuoteLiteral(role))
-	if err := db.QueryRow(query).Scan(&privileges); err != nil {
+	if err := db.QueryRowRetry(func(r *sql.Row) error { return r.Scan(&privileges) }, query); err != nil {
 		return fmt.Errorf("could not read privileges for schema %s: %w", schemaName, err)
 	}
 
@@ -229,11 +229,11 @@ WHERE routine_schema = %s
 AND grantee = %s
 GROUP BY routine_name`,
 			pq.QuoteLiteral(d.Get("schema").(string)), pq.QuoteLiteral(role))
-		rows, err = db.Query(query)
+		rows, err = db.QueryRetry(query)
 
 	default:
 		query = fmt.Sprintf("with a as (show tables from %s) , b as (show grants on table * for %s) select a.table_name,  array_agg(privilege_type) from a inner join b on a.table_name=b.table_name and a.schema_name = b.schema_name  where a.type='%s'  and grantee= %s group by a.table_name;", pq.QuoteIdentifier(d.Get("schema").(string)), pq.QuoteIdentifier(role), objectType, pq.QuoteLiteral(role))
-		rows, err = db.Query(query)
+		rows, err = db.QueryRetry(query)
 	}
 
 	// This returns, for the specified role (rolname),
@@ -396,7 +396,7 @@ func grantRolePrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error {
 
 	query := createGrantQuery(d, privileges)
 
-	_, err := db.Exec(query)
+	_, err := db.ExecRetry(query)
 	return err
 }
 
@@ -407,7 +407,7 @@ func revokeRolePrivilegesWithDB(db *DBConnection, d *schema.ResourceData) error 
 		// Query is empty, don't run anything
 		return nil
 	}
-	if _, err := db.Exec(query); err != nil {
+	if _, err := db.ExecRetry(query); err != nil {
 		return fmt.Errorf("could not execute revoke query: %w", err)
 	}
 	return nil

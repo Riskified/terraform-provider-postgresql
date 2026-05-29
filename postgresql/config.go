@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/blang/semver"
@@ -89,6 +90,8 @@ type Config struct {
 	Timeout           int
 	ConnectTimeoutSec int
 	MaxConns          int
+	MaxRetries        int
+	RetryMaxDelayMs   int
 	ExpectedVersion   semver.Version
 	SSLClientCert     *ClientCertificateConfig
 	SSLRootCertPath   string
@@ -182,6 +185,9 @@ func (c *Client) Connect() (*DBConnection, error) {
 		// we don't keep opened connection in case of the db has to be dropped in the plan.
 		db.SetMaxIdleConns(0)
 		db.SetMaxOpenConns(c.config.MaxConns)
+		// Recycle connections before LB / CRDB idle reapers kill them mid-query.
+		db.SetConnMaxLifetime(5 * time.Minute)
+		db.SetConnMaxIdleTime(30 * time.Second)
 
 		defaultVersion, _ := semver.Parse(defaultExpectedCockroachDBVersion)
 		version := &c.config.ExpectedVersion

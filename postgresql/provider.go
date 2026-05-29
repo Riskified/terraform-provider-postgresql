@@ -111,6 +111,20 @@ func Provider() *schema.Provider {
 				Description:  "Maximum number of connections to establish to the database. Zero means unlimited.",
 				ValidateFunc: validation.IntAtLeast(-1),
 			},
+			"max_retries": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      defaultMaxRetries,
+				Description:  "Number of times to retry transient CockroachDB read errors (connection reset, timeout, serialization). Zero disables retries.",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
+			"retry_max_delay_ms": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      30000,
+				Description:  "Maximum backoff delay (in milliseconds) between retry attempts. The actual delay uses full jitter and exponential growth, capped at this value.",
+				ValidateFunc: validation.IntAtLeast(1),
+			},
 			"expected_version": {
 				Type:         schema.TypeString,
 				Optional:     true,
@@ -173,6 +187,8 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		ApplicationName:   "Terraform provider",
 		ConnectTimeoutSec: d.Get("connect_timeout").(int),
 		MaxConns:          d.Get("max_connections").(int),
+		MaxRetries:        d.Get("max_retries").(int),
+		RetryMaxDelayMs:   d.Get("retry_max_delay_ms").(int),
 		ExpectedVersion:   version,
 		SSLRootCertPath:   d.Get("sslrootcert").(string),
 	}

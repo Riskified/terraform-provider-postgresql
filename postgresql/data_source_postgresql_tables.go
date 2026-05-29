@@ -105,7 +105,7 @@ func dataSourcePostgreSQLTablesRead(db *DBConnection, d *schema.ResourceData) er
 
 	query = applyTableDataSourceQueryFilters(query, queryConcatKeyword, d)
 
-	rows, err := dbConn.Query(query)
+	rows, err := dbConn.QueryRetry(query)
 	if err != nil {
 		return err
 	}
