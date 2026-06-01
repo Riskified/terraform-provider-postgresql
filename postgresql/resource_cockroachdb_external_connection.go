@@ -2,6 +2,7 @@ package postgresql
 
 import (
 	"fmt"
+
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
@@ -50,7 +51,9 @@ func resourceCockroachDBExternalConnectionRead(db *DBConnection, d *schema.Resou
 func resourceCockroachDBExternalConnectionReadImpl(db *DBConnection, d *schema.ResourceData) error {
 	connName := d.Get(ConnName).(string)
 	var connUrl string
-	if err := db.QueryRow(fmt.Sprintf("select connection_uri from [show external connection %s]", connName)).Scan(&connUrl); err != nil {
+	if err := db.QueryRowRetry(
+		fmt.Sprintf("select connection_uri from [show external connection %s]", connName),
+	).Scan(&connUrl); err != nil {
 		return fmt.Errorf("Error reading EXTERNAL CONNECTION: %w", err)
 	}
 	d.Set(ConnName, connName)
@@ -72,7 +75,9 @@ func resourceCockroachDBExternalConnectionExists(db *DBConnection, d *schema.Res
 
 func connExists(db QueryAble, connName string) (bool, error) {
 	var exists bool
-	if err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM system.external_connections WHERE connection_name = $1);", connName).Scan(&exists); err != nil {
+	if err := db.QueryRowRetry(
+		"SELECT EXISTS(SELECT 1 FROM system.external_connections WHERE connection_name = $1);", connName,
+	).Scan(&exists); err != nil {
 		return false, err
 	}
 	return exists, nil

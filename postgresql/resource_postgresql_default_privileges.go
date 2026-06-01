@@ -196,7 +196,7 @@ func grantRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) 
 	if d.Get("with_grant_option").(bool) {
 		query = query + " WITH GRANT OPTION"
 	}
-	if _, err = db.Exec(query); err != nil {
+	if _, err = db.ExecRetry(query); err != nil {
 		return fmt.Errorf("could not alter default privileges: %w", err)
 	}
 
@@ -226,7 +226,7 @@ func revokeRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData)
 		strings.ToUpper(d.Get("object_type").(string)),
 		pq.QuoteIdentifier(d.Get("role").(string)),
 	)
-	if _, err := db.Exec(query); err != nil {
+	if _, err := db.ExecRetry(query); err != nil {
 		return fmt.Errorf("could not revoke default privileges: %w", err)
 	}
 	return nil
@@ -263,7 +263,7 @@ func readRoleDefaultPrivilegesWithDB(db *DBConnection, d *schema.ResourceData) e
 	query = fmt.Sprintf("with a as (show DEFAULT PRIVILEGES for role %s %s) select array_agg(privilege_type) from a where grantee = '%s' and %s;", owner, inSchema, role, objectTypeClause)
 
 	var privileges pq.ByteaArray
-	if err := db.QueryRow(query).Scan(&privileges); err != nil {
+	if err := db.QueryRowRetry(query).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read default privileges: %w", err)
 	}
 

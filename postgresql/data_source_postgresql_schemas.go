@@ -99,7 +99,7 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 
 	query = applySchemaDataSourceQueryFilters(query, queryConcatKeyword, d)
 
-	rows, err := dbConn.Query(query)
+	rows, err := dbConn.QueryRetry(query)
 	if err != nil {
 		return err
 	}

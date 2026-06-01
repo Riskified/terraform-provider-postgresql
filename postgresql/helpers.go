@@ -37,11 +37,14 @@ func PGResourceExistsFunc(fn func(*DBConnection, *schema.ResourceData) (bool, er
 	}
 }
 
-// QueryAble is a DB connection (sql.DB/Tx)
+// QueryAble is a DB connection (sql.DB/Tx) with retry helpers.
 type QueryAble interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 	QueryRow(query string, args ...interface{}) *sql.Row
+	QueryRetry(query string, args ...interface{}) (*sql.Rows, error)
+	QueryRowRetry(query string, args ...interface{}) *RetryRow
+	ExecRetry(query string, args ...interface{}) (sql.Result, error)
 }
 
 // pqQuoteLiteral returns a string literal safe for inclusion in a PostgreSQL
@@ -56,7 +59,7 @@ func pqQuoteLiteral(in string) string {
 
 func isMemberOfRole(db QueryAble, role, member string) (bool, error) {
 	var _rez int
-	err := db.QueryRow(
+	err := db.QueryRowRetry(
 		"SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2",
 		role, member,
 	).Scan(&_rez)
@@ -92,7 +95,7 @@ func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
 	log.Printf("grantRoleMembership: granting %s to %s", role, member)
 
 	sql := fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
-	if _, err := db.Exec(sql); err != nil {
+	if _, err := db.ExecRetry(sql); err != nil {
 		return false, fmt.Errorf("Error granting role %s to %s: %w", role, member, err)
 	}
 	return true, nil
@@ -116,7 +119,7 @@ func revokeRoleMembership(db QueryAble, role, member string) (bool, error) {
 	log.Printf("revokeRoleMembership: Revoke %s from %s", role, member)
 
 	sql := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
-	if _, err := db.Exec(sql); err != nil {
+	if _, err := db.ExecRetry(sql); err != nil {
 		return false, fmt.Errorf("Error revoking role %s from %s: %w", role, member, err)
 	}
 	return true, nil
@@ -231,7 +234,7 @@ func connectToDatabase(db *DBConnection, database string) (*DBConnection, error)
 // The CockroachDB "system" database is excluded because it uses the legacy
 // schema changer which does not support DROP OWNED BY.
 func getDatabases(db QueryAble) ([]string, error) {
-	rows, err := db.Query("SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'system'")
+	rows, err := db.QueryRetry("SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'system'")
 	if err != nil {
 		return nil, fmt.Errorf("could not list databases: %w", err)
 	}
@@ -249,7 +252,9 @@ func getDatabases(db QueryAble) ([]string, error) {
 }
 
 func dbExists(db QueryAble, dbname string) (bool, error) {
-	err := db.QueryRow("SELECT datname FROM pg_database WHERE datname=$1", dbname).Scan(&dbname)
+	err := db.QueryRowRetry(
+		"SELECT datname FROM pg_database WHERE datname=$1", dbname,
+	).Scan(&dbname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -261,7 +266,9 @@ func dbExists(db QueryAble, dbname string) (bool, error) {
 }
 
 func roleExists(db QueryAble, rolname string) (bool, error) {
-	err := db.QueryRow("SELECT 1 FROM pg_roles WHERE rolname=$1", rolname).Scan(&rolname)
+	err := db.QueryRowRetry(
+		"SELECT 1 FROM pg_roles WHERE rolname=$1", rolname,
+	).Scan(&rolname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -273,7 +280,9 @@ func roleExists(db QueryAble, rolname string) (bool, error) {
 }
 
 func schemaExists(db QueryAble, schemaname string) (bool, error) {
-	err := db.QueryRow("SELECT 1 FROM pg_namespace WHERE nspname=$1", schemaname).Scan(&schemaname)
+	err := db.QueryRowRetry(
+		"SELECT 1 FROM pg_namespace WHERE nspname=$1", schemaname,
+	).Scan(&schemaname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -285,7 +294,9 @@ func schemaExists(db QueryAble, schemaname string) (bool, error) {
 }
 
 func schemaExistsWithDB(db *DBConnection, schemaname string) (bool, error) {
-	err := db.QueryRow("SELECT 1 FROM pg_namespace WHERE nspname=$1", schemaname).Scan(&schemaname)
+	err := db.QueryRowRetry(
+		"SELECT 1 FROM pg_namespace WHERE nspname=$1", schemaname,
+	).Scan(&schemaname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil

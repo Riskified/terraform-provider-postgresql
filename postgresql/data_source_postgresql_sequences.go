@@ -97,7 +97,7 @@ func dataSourcePostgreSQLSequencesRead(db *DBConnection, d *schema.ResourceData)
 
 	query = applySequenceDataSourceQueryFilters(query, queryConcatKeyword, d)
 
-	rows, err := dbConn.Query(query)
+	rows, err := dbConn.QueryRetry(query)
 	if err != nil {
 		return err
 	}

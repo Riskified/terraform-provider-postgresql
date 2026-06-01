@@ -216,7 +216,9 @@ func resourcePostgreSQLDatabaseRead(db *DBConnection, d *schema.ResourceData) er
 func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData) error {
 	dbId := d.Id()
 	var dbName, ownerName string
-	err := db.QueryRow("SELECT d.datname, pg_catalog.pg_get_userbyid(d.datdba) from pg_database d WHERE datname=$1", dbId).Scan(&dbName, &ownerName)
+	err := db.QueryRowRetry(
+		"SELECT d.datname, pg_catalog.pg_get_userbyid(d.datdba) from pg_database d WHERE datname=$1", dbId,
+	).Scan(&dbName, &ownerName)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL database (%q) not found", dbId)
@@ -238,13 +240,12 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 
 	dbSQL := fmt.Sprintf(`SELECT %s FROM pg_catalog.pg_database AS d WHERE d.datname = $1`,
 		strings.Join(columns, ", "))
-	err = db.QueryRow(dbSQL, dbId).
-		Scan(
-			&dbEncoding,
-			&dbCollation,
-			&dbCType,
-			&dbConnLimit,
-		)
+	err = db.QueryRowRetry(dbSQL, dbId).Scan(
+		&dbEncoding,
+		&dbCollation,
+		&dbCType,
+		&dbConnLimit,
+	)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL database (%q) not found", dbId)
