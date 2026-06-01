@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.49.0 (June 1, 2026)
+
+### Features
+
+- **crdb_role_setting**: Add new `postgresql_crdb_role_setting` resource for managing CockroachDB default session variable overrides per role (`ALTER ROLE … SET / RESET`)
+
+## 1.48.0 (June 1, 2026)
+
+### Features
+
+- **retry**: Add `QueryRetry` and `ExecRetry` helpers to wrap transient CockroachDB errors (connection reset, serialization failure, operator intervention) with configurable exponential back-off
+- **provider**: Add `max_retries` and `retry_max_delay_ms` provider fields to control retry behaviour
+
 ## 1.47.0 (April 10, 2026)
 
 ### Bug Fixes

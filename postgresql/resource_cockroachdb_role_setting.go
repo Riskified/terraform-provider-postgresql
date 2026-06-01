@@ -2,6 +2,7 @@ package postgresql
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -166,50 +167,21 @@ func parseRoleSettingID(d *schema.ResourceData) (roleName, settingName string, e
 	return roleName, settingName, nil
 }
 
-// readRoleSetting queries system.database_role_settings and returns the
-// stored value for the given role and setting name. found is false when the
-// setting has not been configured for that role.
-//
-// CockroachDB stores ALTER ROLE ALL settings with role_id = 0 and database_id = 0
-// (global, not scoped to a specific database).
+// readRoleSetting uses SHOW DEFAULT SESSION VARIABLES FOR ROLE to look up the
+// stored value for a specific setting. Only global settings (database IS NULL)
+// are considered, matching the scope of ALTER ROLE … SET without IN DATABASE.
 func readRoleSetting(db *DBConnection, roleName, settingName string) (value string, found bool, err error) {
-	prefix := strings.ToLower(settingName) + "="
-
-	rows, err := roleSettingRows(db, roleName)
-	if err != nil {
-		return "", false, fmt.Errorf("error reading session settings for role %s: %w", roleName, err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var entry string
-		if scanErr := rows.Scan(&entry); scanErr != nil {
-			return "", false, fmt.Errorf("error scanning session setting: %w", scanErr)
-		}
-		// Each entry is "key=value"; split on the first '=' only.
-		if strings.HasPrefix(strings.ToLower(entry), prefix) {
-			return entry[len(prefix):], true, nil
-		}
-	}
-	if rowsErr := rows.Err(); rowsErr != nil {
-		return "", false, fmt.Errorf("error iterating session settings: %w", rowsErr)
-	}
-
-	return "", false, nil
-}
-
-// roleSettingRows returns the individual setting entries for a role from
-// system.database_role_settings. The settings column is a STRING[] where each
-// element is "key=value"; unnest expands it to one row per entry.
-func roleSettingRows(db *DBConnection, roleName string) (*sql.Rows, error) {
-	if strings.EqualFold(roleName, "ALL") {
-		// ALTER ROLE ALL is stored with role_id = 0 (no named role).
-		return db.QueryRetry(
-			"SELECT unnest(settings) FROM system.database_role_settings WHERE database_id = 0 AND role_id = 0",
-		)
-	}
-	return db.QueryRetry(
-		"SELECT unnest(settings) FROM system.database_role_settings WHERE database_id = 0 AND role_name = $1",
-		roleName,
+	roleRef := roleSettingRoleRef(roleName)
+	query := fmt.Sprintf(
+		"SELECT default_values FROM [SHOW DEFAULT SESSION VARIABLES FOR ROLE %s] WHERE session_variables = $1 AND database IS NULL",
+		roleRef,
 	)
+	err = db.QueryRowRetry(query, settingName).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("error reading role setting %s for role %s: %w", settingName, roleName, err)
+	}
+	return value, true, nil
 }
