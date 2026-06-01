@@ -146,7 +146,7 @@ resource "postgresql_crdb_role_setting" "test_update" {
 func TestAccCockroachDBRoleSetting_MultipleSettings(t *testing.T) {
 	skipIfNotAcc(t)
 
-	config := fmt.Sprintf(`
+	config := `
 resource "postgresql_crdb_role_setting" "timeout" {
   role_name     = "ALL"
   setting_name  = "statement_timeout"
@@ -158,7 +158,7 @@ resource "postgresql_crdb_role_setting" "idle_timeout" {
   setting_name  = "idle_in_session_timeout"
   setting_value = "5m"
 }
-`)
+`
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
