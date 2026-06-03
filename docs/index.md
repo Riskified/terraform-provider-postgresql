@@ -153,8 +153,10 @@ The `NO_PROXY` or `no_proxy` environment variable can also be set to opt out of 
 - `expected_version` (String) Specify the expected version of CockroachDB.
 - `host` (String) Name of CockroachDB server address to connect to
 - `max_connections` (Number) Maximum number of connections to establish to the database. Zero means unlimited.
+- `max_retries` (Number) Number of times to retry transient CockroachDB read errors (connection reset, timeout, serialization). Zero disables retries.
 - `password` (String, Sensitive) Password for authentication
 - `port` (Number) The CockroachDB port number to connect to at the server host
+- `retry_max_delay_ms` (Number) Maximum backoff delay (in milliseconds) between retry attempts. The actual delay uses full jitter and exponential growth, capped at this value.
 - `ssl_mode` (String, Deprecated)
 - `sslmode` (String) This option determines whether or with what priority a secure SSL TCP/IP connection will be negotiated with the server
 - `sslrootcert` (String) The SSL server root certificate file path. The file must contain PEM encoded data.

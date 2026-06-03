@@ -144,6 +144,7 @@ func Provider() *schema.Provider {
 			"postgresql_function":                 resourcePostgreSQLFunction(),
 			"postgresql_crdb_changefeed":          resourceCockroachDBChangefeed(),
 			"postgresql_crdb_external_connection": resourceCockroachDBExternalConnection(),
+			"postgresql_crdb_role_setting":        resourceCockroachDBRoleSetting(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
