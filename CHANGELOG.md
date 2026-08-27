@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.50.0 (August 27, 2026)
 
 ### Bug Fixes
 
