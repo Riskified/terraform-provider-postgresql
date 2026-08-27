@@ -20,7 +20,4 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          # Pin to last version that passed on master. `latest` (v2.13.1+)
-          # fails on pre-existing terraform-plugin-sdk SA1019 deprecations.
-          version: v2.12.2
-
+          version: latest

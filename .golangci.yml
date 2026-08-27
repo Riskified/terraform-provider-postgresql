@@ -22,6 +22,7 @@ linters:
         - "-ST1000" # package comments - single-package Terraform provider
         - "-ST1003" # naming conventions (sinkUri vs sinkURI) - pre-existing, fix separately
         - "-ST1005" # capitalized error strings - pre-existing, fix separately
+        - "-SA1019" # terraform-plugin-sdk v1-style Create/Read/Update/Delete/Exists, Providers, ConfigureFunc
         - "-QF*"    # quickfix suggestions - style, not bugs
 
 formatters:
