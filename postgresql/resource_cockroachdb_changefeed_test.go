@@ -278,6 +278,143 @@ func TestValidateDateTime(t *testing.T) {
 	}
 }
 
+func TestFlattenTableList(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "real list",
+			input:    []string{"orders", "customers", "payments"},
+			expected: []string{"orders", "customers", "payments"},
+		},
+		{
+			name:     "legacy comma-separated single element",
+			input:    []string{"orders,customers,payments"},
+			expected: []string{"orders", "customers", "payments"},
+		},
+		{
+			name:     "mixed",
+			input:    []string{"orders,customers", "payments"},
+			expected: []string{"orders", "customers", "payments"},
+		},
+		{
+			name:     "whitespace",
+			input:    []string{"orders, customers", " payments"},
+			expected: []string{"orders", "customers", "payments"},
+		},
+		{
+			name:     "empty tokens dropped",
+			input:    []string{"orders,", ",customers", ""},
+			expected: []string{"orders", "customers"},
+		},
+		{
+			name:     "empty list",
+			input:    []string{},
+			expected: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := flattenTableList(tt.input)
+			if !testStringSlicesEqual(result, tt.expected) {
+				t.Errorf("flattenTableList() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTableListFromState(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []interface{}
+		expected []string
+	}{
+		{
+			name:     "real list",
+			input:    []interface{}{"orders", "customers", "payments"},
+			expected: []string{"orders", "customers", "payments"},
+		},
+		{
+			name:     "legacy comma-separated single element",
+			input:    []interface{}{"orders,customers,payments"},
+			expected: []string{"orders", "customers", "payments"},
+		},
+		{
+			name:     "mixed",
+			input:    []interface{}{"orders,customers", "payments"},
+			expected: []string{"orders", "customers", "payments"},
+		},
+		{
+			name:     "whitespace",
+			input:    []interface{}{"orders, customers"},
+			expected: []string{"orders", "customers"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tableListFromState(tt.input)
+			if !testStringSlicesEqual(result, tt.expected) {
+				t.Errorf("tableListFromState() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTableListFromStateFindChanges(t *testing.T) {
+	tests := []struct {
+		name             string
+		current          []interface{}
+		new              []interface{}
+		expectedToAdd    []string
+		expectedToRemove []string
+	}{
+		{
+			name:             "real list add table",
+			current:          []interface{}{"orders", "customers"},
+			new:              []interface{}{"orders", "customers", "payments"},
+			expectedToAdd:    []string{"payments"},
+			expectedToRemove: nil,
+		},
+		{
+			name:             "real list remove table",
+			current:          []interface{}{"orders", "customers", "payments"},
+			new:              []interface{}{"orders", "customers"},
+			expectedToAdd:    nil,
+			expectedToRemove: []string{"payments"},
+		},
+		{
+			name:             "legacy single element add table",
+			current:          []interface{}{"orders,customers"},
+			new:              []interface{}{"orders,customers,payments"},
+			expectedToAdd:    []string{"payments"},
+			expectedToRemove: nil,
+		},
+		{
+			name:             "format-only real vs legacy is no-op",
+			current:          []interface{}{"a,b"},
+			new:              []interface{}{"a", "b"},
+			expectedToAdd:    nil,
+			expectedToRemove: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			toAdd, toRemove := findTableChanges(tableListFromState(tt.current), tableListFromState(tt.new))
+			if !testStringSlicesEqual(toAdd, tt.expectedToAdd) {
+				t.Errorf("toAdd = %v, want %v", toAdd, tt.expectedToAdd)
+			}
+			if !testStringSlicesEqual(toRemove, tt.expectedToRemove) {
+				t.Errorf("toRemove = %v, want %v", toRemove, tt.expectedToRemove)
+			}
+		})
+	}
+}
+
 func TestInterface2StringList(t *testing.T) {
 	tests := []struct {
 		name     string

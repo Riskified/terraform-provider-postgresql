@@ -202,12 +202,13 @@ func resourceCockroachDBChangefeedReadImpl(db *DBConnection, d *schema.ResourceD
 
 	// Setting the table list
 	currentTableListInterface := d.Get(CDCtableList)
+	jobTableList := flattenTableList([]string{jobTableString})
 	if len(currentTableListInterface.([]interface{})) == 0 {
 		// in case we're in import mode
-		d.Set(CDCtableList, strings.Split(jobTableString, ","))
+		d.Set(CDCtableList, jobTableList)
 	} else {
-		currentTableList := strings.Split(currentTableListInterface.([]interface{})[0].(string), ",")
-		tablesToAdd, tablesToRemove := findTableChanges(currentTableList, strings.Split(jobTableString, ","))
+		currentTableList := tableListFromState(currentTableListInterface)
+		tablesToAdd, tablesToRemove := findTableChanges(currentTableList, jobTableList)
 		if len(tablesToAdd) == 0 && len(tablesToRemove) == 0 {
 			tableList := Interface2StringList(currentTableListInterface)
 			d.Set(CDCtableList, tableList)
@@ -258,8 +259,8 @@ func resourceCockroachDBChangefeedUpdate(db *DBConnection, d *schema.ResourceDat
 
 	currentTableListInterface, newTableListInterface := d.GetChange(CDCtableList)
 
-	currentTableList := strings.Split(currentTableListInterface.([]interface{})[0].(string), ",")
-	newTableList := strings.Split(newTableListInterface.([]interface{})[0].(string), ",")
+	currentTableList := tableListFromState(currentTableListInterface)
+	newTableList := tableListFromState(newTableListInterface)
 
 	tablesToAdd, tablesToRemove := findTableChanges(currentTableList, newTableList)
 
@@ -443,7 +444,24 @@ func Interface2StringList(interfaceList interface{}) []string {
 		stringList[i] = v.(string)
 	}
 	return stringList
+}
 
+// flattenTableList expands comma-separated items so both encodings work:
+// table_list = ["orders", "customers"] and the legacy table_list = ["orders,customers"].
+func flattenTableList(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		for _, part := range strings.Split(item, ",") {
+			if t := strings.TrimSpace(part); t != "" {
+				out = append(out, t)
+			}
+		}
+	}
+	return out
+}
+
+func tableListFromState(list interface{}) []string {
+	return flattenTableList(Interface2StringList(list))
 }
 
 func validateDateTime(val interface{}, key string) (warns []string, errs []error) {

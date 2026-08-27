@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.50.0 (August 27, 2026)
+
+### Bug Fixes
+
+- **changefeed**: Fix `table_list` update/read to use the full list of tables so adding a table to an existing CDC emits `ALTER CHANGEFEED … ADD` ([DEV-138674](https://riskified.atlassian.net/browse/DEV-138674))
+
 ## 1.49.0 (June 1, 2026)
 
 ### Features
