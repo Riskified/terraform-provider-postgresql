@@ -103,6 +103,83 @@ resource "postgresql_crdb_role_setting" "test" {
 	})
 }
 
+// String settings reject unquoted numbers ("requires a string value"), so digits stay quoted.
+func TestAccCockroachDBRoleSetting_StringOfDigits(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := `
+resource "postgresql_crdb_role_setting" "test" {
+  role_name     = "ALL"
+  setting_name  = "application_name"
+  setting_value = "123"
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckCockroachDBRoleSettingDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckCockroachDBRoleSettingExists("postgresql_crdb_role_setting.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_crdb_role_setting.test", "setting_value", "123"),
+				),
+			},
+		},
+	})
+}
+
+func TestIntegerSettingValue(t *testing.T) {
+	for v, want := range map[string]bool{
+		"0": true, "1": true, "100000": true, "-1": true,
+		"0100": false, "-0": false, "+1": false, "1.5": false, "1e5": false,
+		"30s": false, "true": false, "": false, " 1": false, "1; DROP x": false,
+	} {
+		if got := integerSettingValue.MatchString(v); got != want {
+			t.Errorf("integerSettingValue.MatchString(%q) = %v, want %v", v, got, want)
+		}
+	}
+}
+
+// Integer settings reject quoted values ("requires an integer value").
+func TestAccCockroachDBRoleSetting_IntegerValue(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := func(v string) string {
+		return fmt.Sprintf(`
+resource "postgresql_crdb_role_setting" "test" {
+  role_name     = "ALL"
+  setting_name  = "transaction_rows_read_err"
+  setting_value = "%s"
+}
+`, v)
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckCockroachDBRoleSettingDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config("100000"),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckCockroachDBRoleSettingExists("postgresql_crdb_role_setting.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_crdb_role_setting.test", "setting_value", "100000"),
+				),
+			},
+			{
+				Config: config("200000"),
+				Check: resource.TestCheckResourceAttr(
+					"postgresql_crdb_role_setting.test", "setting_value", "200000"),
+			},
+		},
+	})
+}
+
 func TestAccCockroachDBRoleSetting_Update(t *testing.T) {
 	skipIfNotAcc(t)
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.51.0 (November 3, 2026)
+
+### Bug Fixes
+
+- **crdb_role_setting**: Integer settings such as `transaction_rows_read_err` no longer fail with "requires an integer value". Values are still sent quoted first; an integer value rejected with SQLSTATE 22023 is retried unquoted ([DEV-146590](https://riskified.atlassian.net/browse/DEV-146590))
+
 ## 1.50.0 (August 27, 2026)
 
 ### Bug Fixes

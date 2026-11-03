@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -127,16 +128,29 @@ func resourceCockroachDBRoleSettingExists(db *DBConnection, d *schema.ResourceDa
 	return found, err
 }
 
+// Canonical integers only (no leading zeros, no "-0"): CockroachDB stores the unquoted value
+// normalized, so "0100" would read back as "100" and show a diff on every plan.
+var integerSettingValue = regexp.MustCompile(`^(0|-?[1-9][0-9]*)$`)
+
 // execAlterRoleSet runs ALTER ROLE <role> SET <setting> = '<value>'.
+// CockroachDB rejects a quoted value for integer settings such as transaction_rows_read_err
+// ("requires an integer value", SQLSTATE 22023), so an integer value is retried unquoted.
+// Quoted stays first because string settings reject unquoted numbers.
 func execAlterRoleSet(db *DBConnection, roleName, settingName, settingValue string) error {
-	roleRef := roleSettingRoleRef(roleName)
-	query := fmt.Sprintf(
-		"ALTER ROLE %s SET %s = '%s'",
-		roleRef,
-		pq.QuoteIdentifier(settingName),
-		pqQuoteLiteral(settingValue),
-	)
-	if _, err := db.ExecRetry(query); err != nil {
+	prefix := fmt.Sprintf("ALTER ROLE %s SET %s = ", roleSettingRoleRef(roleName), pq.QuoteIdentifier(settingName))
+
+	_, err := db.ExecRetry(prefix + "'" + pqQuoteLiteral(settingValue) + "'")
+	var pqErr *pq.Error
+	if err != nil && integerSettingValue.MatchString(settingValue) && errors.As(err, &pqErr) &&
+		pqErr.Code == "22023" && strings.Contains(pqErr.Message, "requires an integer value") {
+		// Unquoted on purpose: safe only because integerSettingValue admits digits and "-" alone.
+		if _, retryErr := db.ExecRetry(prefix + settingValue); retryErr == nil {
+			err = nil
+		} else {
+			err = fmt.Errorf("%w (unquoted retry: %v)", err, retryErr)
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("error setting %s for role %s: %w", settingName, roleName, err)
 	}
 	return nil
