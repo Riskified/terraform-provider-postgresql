@@ -128,7 +128,9 @@ func resourceCockroachDBRoleSettingExists(db *DBConnection, d *schema.ResourceDa
 	return found, err
 }
 
-var integerSettingValue = regexp.MustCompile(`^-?[0-9]+$`)
+// Canonical integers only (no leading zeros, no "-0"): CockroachDB stores the unquoted value
+// normalized, so "0100" would read back as "100" and show a diff on every plan.
+var integerSettingValue = regexp.MustCompile(`^(0|-?[1-9][0-9]*)$`)
 
 // execAlterRoleSet runs ALTER ROLE <role> SET <setting> = '<value>'.
 // CockroachDB rejects a quoted value for integer settings such as transaction_rows_read_err
@@ -140,7 +142,9 @@ func execAlterRoleSet(db *DBConnection, roleName, settingName, settingValue stri
 	_, err := db.ExecRetry(prefix + "'" + pqQuoteLiteral(settingValue) + "'")
 	var pqErr *pq.Error
 	if err != nil && integerSettingValue.MatchString(settingValue) && errors.As(err, &pqErr) && pqErr.Code == "22023" {
-		_, err = db.ExecRetry(prefix + settingValue)
+		if _, retryErr := db.ExecRetry(prefix + settingValue); retryErr == nil {
+			err = nil
+		} // else keep the quoted attempt's error: it names the real cause
 	}
 	if err != nil {
 		return fmt.Errorf("error setting %s for role %s: %w", settingName, roleName, err)
