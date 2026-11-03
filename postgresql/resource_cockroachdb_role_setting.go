@@ -141,10 +141,14 @@ func execAlterRoleSet(db *DBConnection, roleName, settingName, settingValue stri
 
 	_, err := db.ExecRetry(prefix + "'" + pqQuoteLiteral(settingValue) + "'")
 	var pqErr *pq.Error
-	if err != nil && integerSettingValue.MatchString(settingValue) && errors.As(err, &pqErr) && pqErr.Code == "22023" {
+	if err != nil && integerSettingValue.MatchString(settingValue) && errors.As(err, &pqErr) &&
+		pqErr.Code == "22023" && strings.Contains(pqErr.Message, "requires an integer value") {
+		// Unquoted on purpose: safe only because integerSettingValue admits digits and "-" alone.
 		if _, retryErr := db.ExecRetry(prefix + settingValue); retryErr == nil {
 			err = nil
-		} // else keep the quoted attempt's error: it names the real cause
+		} else {
+			err = fmt.Errorf("%w (unquoted retry: %v)", err, retryErr)
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("error setting %s for role %s: %w", settingName, roleName, err)
