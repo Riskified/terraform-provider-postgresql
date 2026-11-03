@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.51.0 (Unreleased)
+## 1.51.0 (November 3, 2026)
 
 ### Bug Fixes
 
