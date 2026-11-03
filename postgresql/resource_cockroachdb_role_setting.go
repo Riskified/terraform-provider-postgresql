@@ -128,27 +128,21 @@ func resourceCockroachDBRoleSettingExists(db *DBConnection, d *schema.ResourceDa
 	return found, err
 }
 
-var numericSettingValue = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
+var integerSettingValue = regexp.MustCompile(`^-?[0-9]+$`)
 
-// roleSettingValueSQL renders the value for ALTER ROLE … SET. Numbers go unquoted:
-// CockroachDB rejects a quoted value for integer settings such as transaction_rows_read_err.
-func roleSettingValueSQL(settingValue string) string {
-	if numericSettingValue.MatchString(settingValue) {
-		return settingValue
-	}
-	return "'" + pqQuoteLiteral(settingValue) + "'"
-}
-
-// execAlterRoleSet runs ALTER ROLE <role> SET <setting> = <value>.
+// execAlterRoleSet runs ALTER ROLE <role> SET <setting> = '<value>'.
+// CockroachDB rejects a quoted value for integer settings such as transaction_rows_read_err
+// ("requires an integer value", SQLSTATE 22023), so an integer value is retried unquoted.
+// Quoted stays first because string settings reject unquoted numbers.
 func execAlterRoleSet(db *DBConnection, roleName, settingName, settingValue string) error {
-	roleRef := roleSettingRoleRef(roleName)
-	query := fmt.Sprintf(
-		"ALTER ROLE %s SET %s = %s",
-		roleRef,
-		pq.QuoteIdentifier(settingName),
-		roleSettingValueSQL(settingValue),
-	)
-	if _, err := db.ExecRetry(query); err != nil {
+	prefix := fmt.Sprintf("ALTER ROLE %s SET %s = ", roleSettingRoleRef(roleName), pq.QuoteIdentifier(settingName))
+
+	_, err := db.ExecRetry(prefix + "'" + pqQuoteLiteral(settingValue) + "'")
+	var pqErr *pq.Error
+	if err != nil && integerSettingValue.MatchString(settingValue) && errors.As(err, &pqErr) && pqErr.Code == "22023" {
+		_, err = db.ExecRetry(prefix + settingValue)
+	}
+	if err != nil {
 		return fmt.Errorf("error setting %s for role %s: %w", settingName, roleName, err)
 	}
 	return nil

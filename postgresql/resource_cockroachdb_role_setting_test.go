@@ -103,23 +103,33 @@ resource "postgresql_crdb_role_setting" "test" {
 	})
 }
 
-func TestRoleSettingValueSQL(t *testing.T) {
-	cases := map[string]string{
-		"100000":     "100000",
-		"-1":         "-1",
-		"0.5":        "0.5",
-		"30s":        "'30s'",
-		"true":       "'true'",
-		"background": "'background'",
-		"1e5":        "'1e5'",
-		"1; DROP x":  "'1; DROP x'",
-		"it's":       "'it''s'",
-	}
-	for in, want := range cases {
-		if got := roleSettingValueSQL(in); got != want {
-			t.Errorf("roleSettingValueSQL(%q) = %s, want %s", in, got, want)
-		}
-	}
+// String settings reject unquoted numbers ("requires a string value"), so digits stay quoted.
+func TestAccCockroachDBRoleSetting_StringOfDigits(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := `
+resource "postgresql_crdb_role_setting" "test" {
+  role_name     = "ALL"
+  setting_name  = "application_name"
+  setting_value = "123"
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckCockroachDBRoleSettingDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckCockroachDBRoleSettingExists("postgresql_crdb_role_setting.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_crdb_role_setting.test", "setting_value", "123"),
+				),
+			},
+		},
+	})
 }
 
 // Integer settings reject quoted values ("requires an integer value").
